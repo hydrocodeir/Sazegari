@@ -9,5 +9,11 @@ class FormTemplate(Base):
     org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id"), index=True)
     county_id: Mapped[int | None] = mapped_column(ForeignKey("counties.id"), nullable=True, index=True)
 
+    # scope:
+    # - county   : فرم مخصوص یک شهرستان (county_id دارد)
+    # - all      : فرم عمومی ارگان برای همه شهرستان‌ها (county_id خالی)
+    # - province : فرم مخصوص گزارش استانی (county_id خالی)
+    scope: Mapped[str] = mapped_column(String(20), default="all", index=True)
+
     title: Mapped[str] = mapped_column(String(200), index=True)
     schema_json: Mapped[str] = mapped_column(Text, default="{}")

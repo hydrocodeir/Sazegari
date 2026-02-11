@@ -9,7 +9,7 @@
 
 <div class="card p-3 mb-3">
   <h5 class="mb-2">ایجاد گزارش جدید</h5>
-  {% if user.role.value.startswith('org_county') %}
+  {% if user.role.value == 'org_county_expert' %}
     <div class="text-muted small mb-3">
       ابتدا متن/پیوست‌های اولیه را اضافه کن، سپس هر تعداد «فرم» را به گزارش متصل کن و برای هر فرم توضیح بنویس؛ در پایان نتیجه‌گیری را ثبت و گزارش را ارسال کن.
     </div>
@@ -19,8 +19,18 @@
         ایجاد گزارش جدید
       </button>
     </form>
+  {% elif user.role.value == 'org_prov_expert' %}
+    <div class="text-muted small mb-3">
+      پس از نهایی شدن گزارش‌های شهرستان‌های ارگان، گزارش جامع استانی را اینجا ایجاد کنید.
+    </div>
+    <form method="post" action="/reports?kind=provincial">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i>
+        ایجاد گزارش جامع استانی
+      </button>
+    </form>
   {% else %}
-    <div class="text-muted small">ایجاد گزارش فقط برای کاربران شهرستان فعال است.</div>
+    <div class="text-muted small">ایجاد گزارش فقط برای «کارشناس شهرستان» و «کارشناس استان» فعال است.</div>
   {% endif %}
 </div>
 
@@ -28,13 +38,14 @@
   <h5>لیست گزارش‌ها</h5>
   <div class="table-responsive">
     <table class="table table-sm align-middle">
-      <thead><tr><th>#</th><th>org</th><th>county</th><th>status</th><th>owner</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>نوع</th><th>org</th><th>county</th><th>status</th><th>owner</th><th></th></tr></thead>
       <tbody>
         {% for r in reports %}
           <tr>
             <td>{{ r.id }}</td>
+            <td>{{ r.kind.value }}</td>
             <td>{{ r.org_id }}</td>
-            <td>{{ r.county_id }}</td>
+            <td>{{ r.county_id or '-' }}</td>
             <td><span class="badge text-bg-secondary">{{ r.status.value }}</span></td>
             <td>{{ (owner_names|default({})).get(r.current_owner_id, r.current_owner_id) }}</td>
             <td><a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">باز کردن</a></td>

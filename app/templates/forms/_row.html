@@ -2,7 +2,15 @@
   <td>{{ form.id }}</td>
   <td><a href="/forms/{{ form.id }}/edit">{{ form.title }}</a></td>
   <td>{{ form.org_id }}</td>
-  <td>{{ form.county_id or "ALL" }}</td>
+  <td>
+    {% if form.scope == 'province' %}
+      استان
+    {% elif form.scope == 'all' %}
+      همه شهرستان‌ها
+    {% else %}
+      {% for c in counties %}{% if c.id == form.county_id %}{{ c.name }}{% endif %}{% endfor %}
+    {% endif %}
+  </td>
   <td>
     <button class="btn btn-sm btn-outline-danger" {% if can_create_form %}hx-delete="/forms/{{ form.id }}"{% else %}hx-delete="" disabled{% endif %} hx-target="#form-{{ form.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
   </td>

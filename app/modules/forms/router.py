@@ -18,7 +18,11 @@ def page(request: Request, db: Session = Depends(get_db), user=Depends(get_curre
     if not is_secretariat(user):
         q = q.filter(FormTemplate.org_id == user.org_id)
         if is_county(user):
-            q = q.filter((FormTemplate.county_id == None) | (FormTemplate.county_id == user.county_id))
+            # شهرستان فقط فرم‌های عمومی + شهرستان خودش (و نه فرم‌های استانی)
+            q = q.filter(
+                (FormTemplate.scope == "all")
+                | ((FormTemplate.scope == "county") & (FormTemplate.county_id == user.county_id))
+            )
     forms = q.all()
     orgs = db.query(Org).order_by(Org.name.asc()).all()
     counties = db.query(County).order_by(County.name.asc()).all()
@@ -35,17 +39,32 @@ def create(
     user=Depends(get_current_user),
 ):
     require(can_create_form(user))
-    cid = int(county_id) if county_id.strip() else None
+    # county_id می‌تواند یکی از موارد زیر باشد:
+    # ""         => همه شهرستان‌ها (scope=all)
+    # "province" => استان (scope=province)
+    # "<id>"     => یک شهرستان مشخص (scope=county)
+    scope = "all"
+    cid = None
+    if (county_id or "").strip() == "province":
+        scope = "province"
+        cid = None
+    elif (county_id or "").strip():
+        scope = "county"
+        cid = int(county_id)
     # validate schema JSON
     try:
         json.loads(schema_text or "{}")
     except Exception:
         schema_text = "{}"
-    f = FormTemplate(org_id=org_id, county_id=cid, title=title.strip(), schema_json=schema_text)
+    f = FormTemplate(org_id=org_id, county_id=cid, scope=scope, title=title.strip(), schema_json=schema_text)
     db.add(f)
     db.commit()
     db.refresh(f)
-    return request.app.state.templates.TemplateResponse("forms/_row.html", {"request": request, "form": f, "can_create_form": True})
+    counties = db.query(County).order_by(County.name.asc()).all()
+    return request.app.state.templates.TemplateResponse(
+        "forms/_row.html",
+        {"request": request, "form": f, "can_create_form": True, "counties": counties},
+    )
 
 @router.get("/{form_id}/edit", response_class=HTMLResponse)
 def edit_page(request: Request, form_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -68,7 +87,14 @@ def edit_save(
 ):
     require(can_create_form(user))
     f = db.get(FormTemplate, form_id)
-    cid = int(county_id) if county_id.strip() else None
+    scope = "all"
+    cid = None
+    if (county_id or "").strip() == "province":
+        scope = "province"
+        cid = None
+    elif (county_id or "").strip():
+        scope = "county"
+        cid = int(county_id)
     try:
         json.loads(schema_text or "{}")
     except Exception:
@@ -80,6 +106,7 @@ def edit_save(
         )
     f.org_id = org_id
     f.county_id = cid
+    f.scope = scope
     f.title = title.strip()
     f.schema_json = schema_text
     db.commit()

@@ -9,6 +9,7 @@ from app.db.models.report_submission import ReportSubmission
 from app.db.models.workflow_log import WorkflowLog
 from app.db.models.notification import Notification
 from app.db.models.report_attachment import ReportAttachment
+from app.db.models.report_audit_log import ReportAuditLog
 from app.db.models.user import User
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "WorkflowLog",
     "Notification",
     "ReportAttachment",
+    "ReportAuditLog",
     "User",
 ]

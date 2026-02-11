@@ -17,9 +17,12 @@
       <div class="col-md-4">
         <label class="form-label">شهرستان (اختیاری)</label>
         <select name="county_id" class="form-select">
-          <option value="" {% if not form.county_id %}selected{% endif %}>همه شهرستان‌ها</option>
+          <option value="" {% if form.scope == 'all' %}selected{% endif %}>همه شهرستان‌ها</option>
+          {% if user.role.value == 'org_prov_expert' %}
+            <option value="province" {% if form.scope == 'province' %}selected{% endif %}>استان</option>
+          {% endif %}
           {% for c in counties %}
-            <option value="{{ c.id }}" {% if form.county_id==c.id %}selected{% endif %}>{{ c.name }}</option>
+            <option value="{{ c.id }}" {% if form.scope == 'county' and form.county_id==c.id %}selected{% endif %}>{{ c.name }}</option>
           {% endfor %}
         </select>
       </div>

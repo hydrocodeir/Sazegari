@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}گزارش #{{ report.id }}{% endblock %}
 {% block content %}
-{% set can_edit = (report.status.value in ["draft","needs_revision"] and report.current_owner_id == user.id) %}
-
 <div class="row g-3">
   <div class="col-12">
     <div class="card p-3 border-0 shadow-sm">
@@ -10,6 +8,7 @@
         <div>
           <div class="h5 m-0">گزارش #{{ report.id }}</div>
           <div class="text-muted small">
+            نوع: <span class="badge text-bg-info">{{ report.kind.value }}</span> |
             وضعیت: <span class="badge text-bg-secondary">{{ report.status.value }}</span>
             {% if report.current_owner_id %} | در صف: <span class="badge text-bg-warning">{{ owner_name }}</span>{% endif %}
           </div>
@@ -17,6 +16,11 @@
         <div class="d-flex gap-2">
           <a class="btn btn-outline-secondary btn-sm" href="/reports">بازگشت</a>
           <a class="btn btn-outline-primary btn-sm" href="/reports/{{ report.id }}/pdf">دانلود PDF</a>
+          {% if user.role.value in ['org_county_expert','org_prov_expert'] and report.current_owner_id == user.id and report.status.value != 'final_approved' %}
+            <form method="post" action="/reports/{{ report.id }}/delete" onsubmit="return confirm('این گزارش حذف می‌شود. ادامه می‌دهید؟')">
+              <button class="btn btn-outline-danger btn-sm" type="submit">حذف گزارش</button>
+            </form>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -141,6 +145,64 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div class="card p-3 border-0 shadow-sm mt-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="m-0">لاگ تغییرات محتوا</h6>
+        <div class="text-muted small">(ReportAuditLog)</div>
+      </div>
+
+      {% if audit_logs|length == 0 %}
+        <div class="text-muted small">تا الان تغییری ثبت نشده است.</div>
+      {% else %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>action</th>
+                <th>field</th>
+                <th>actor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in audit_logs %}
+                <tr>
+                  <td>{{ a.id }}</td>
+                  <td><span class="badge text-bg-light">{{ a.action }}</span></td>
+                  <td>{{ a.field }}</td>
+                  <td>{{ actor_map.get(a.actor_id, a.actor_id) }}</td>
+                </tr>
+                {% if a.comment or a.before_json or a.after_json %}
+                <tr>
+                  <td colspan="4" class="bg-body-tertiary">
+                    <details>
+                      <summary class="small text-muted">جزئیات</summary>
+                      {% if a.comment %}
+                        <div class="small mt-2"><span class="text-muted">توضیح:</span> {{ a.comment }}</div>
+                      {% endif %}
+                      {% if a.before_json %}
+                        <div class="small mt-2">
+                          <div class="text-muted">قبل:</div>
+                          <pre class="small mb-0" style="white-space: pre-wrap">{{ a.before_json }}</pre>
+                        </div>
+                      {% endif %}
+                      {% if a.after_json %}
+                        <div class="small mt-2">
+                          <div class="text-muted">بعد:</div>
+                          <pre class="small mb-0" style="white-space: pre-wrap">{{ a.after_json }}</pre>
+                        </div>
+                      {% endif %}
+                    </details>
+                  </td>
+                </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
     </div>
   </div>
 

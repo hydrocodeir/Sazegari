@@ -2,13 +2,21 @@ import json
 import os
 import uuid
 from fastapi import APIRouter, Request, Depends, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.config import settings
 from app.auth.deps import get_current_user
-from app.core.rbac import require, can_view_report, can_create_report, allowed_actions, transition
+from app.core.rbac import require, can_view_report, can_create_report
+from app.core.workflow import (
+    allowed_actions,
+    allowed_actions_for_status,
+    can_edit as wf_can_edit,
+    can_delete as wf_can_delete,
+    get_recipients,
+    get_transition,
+)
 from app.db.models.report import Report, ReportStatus
 from app.db.models.workflow_log import WorkflowLog
 from app.db.models.report_submission import ReportSubmission
@@ -17,6 +25,8 @@ from app.db.models.submission import Submission
 from app.db.models.form_template import FormTemplate
 from app.db.models.org_county import OrgCountyUnit
 from app.db.models.user import User, Role
+from app.db.models.report_audit_log import ReportAuditLog
+from app.db.models.report import ReportKind
 from app.utils.badges import get_badge_count
 from app.utils.report_agg import aggregate_content
 from app.utils.report_doc import load_doc, dump_doc
@@ -44,6 +54,41 @@ def _sync_sections(doc: dict, linked_ids: list[int]) -> dict:
         sections = [{"submission_id": sid, "description_html": ""} for sid in linked_ids]
     doc["sections"] = sections
     return doc
+
+
+def _audit(
+    db: Session,
+    report_id: int,
+    actor_id: int,
+    action: str,
+    field: str = "",
+    before: dict | list | str | None = None,
+    after: dict | list | str | None = None,
+    comment: str = "",
+) -> None:
+    """ثبت لاگ تغییرات گزارش (ایجاد/ویرایش/حذف و ...)."""
+
+    def _dump(v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v
+        try:
+            return json.dumps(v, ensure_ascii=False)
+        except Exception:
+            return str(v)
+
+    db.add(
+        ReportAuditLog(
+            report_id=report_id,
+            actor_id=actor_id,
+            action=action,
+            field=field or "",
+            before_json=_dump(before),
+            after_json=_dump(after),
+            comment=comment or "",
+        )
+    )
 
 
 
@@ -79,43 +124,46 @@ def _last_sender_user(db: Session, report: Report) -> User | None:
     return db.get(User, int(sender_id))
 
 def _eligible_recipients(db: Session, report: Report, action: str) -> list[User]:
-    """گیرنده‌های مجاز برای هر اقدام (بر اساس workflow و محدوده ارگان/شهرستان)."""
-    if action == "submit_for_review":
-        # county expert -> county manager (same org+county)
-        return db.query(User).filter(
-            User.role == Role.ORG_COUNTY_MANAGER,
-            User.org_id == report.org_id,
-            User.county_id == report.county_id,
-        ).all()
+    """گیرنده‌های مجاز برای هر اقدام (State Machine Driven)."""
+    try:
+        recipients = get_recipients(db, report, action)
+    except KeyError:
+        recipients = []
 
-    if action == "approve":
-        if report.status in (ReportStatus.COUNTY_EXPERT_REVIEW,):
-            # legacy: treat same as county manager review
-            return db.query(User).filter(User.role == Role.ORG_PROV_EXPERT, User.org_id == report.org_id).all()
-        if report.status == ReportStatus.COUNTY_MANAGER_REVIEW:
-            return db.query(User).filter(User.role == Role.ORG_PROV_EXPERT, User.org_id == report.org_id).all()
-        if report.status == ReportStatus.PROV_EXPERT_REVIEW:
-            return db.query(User).filter(User.role == Role.ORG_PROV_MANAGER, User.org_id == report.org_id).all()
-        if report.status == ReportStatus.PROV_MANAGER_REVIEW:
-            return db.query(User).filter(User.role.in_([Role.SECRETARIAT_USER, Role.SECRETARIAT_ADMIN])).all()
-
-    if action == "request_revision":
-        # Send back to the person we received the report from (previous step).
+    # Fallback: for request_revision, if config yields none, send back to last sender.
+    if action == "request_revision" and not recipients:
         sender = _last_sender_user(db, report)
         return [sender] if sender else []
 
-    return []
+    return recipients
 
 def _can_act(user: User, report: Report, action: str) -> bool:
-    if report.status == ReportStatus.FINAL_APPROVED:
-        return False
+    # allowed_actions() already checks: final + current owner + role/state
+    return action in allowed_actions(user, report)
 
-    # Secretarial step
-    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
-        return report.current_owner_id == user.id and report.status == ReportStatus.SECRETARIAT_REVIEW and action in ("final_approve", "request_revision")
 
-    # Others: must own the report
-    return report.current_owner_id == user.id and action in allowed_actions(user, report.status)
+def _can_edit(user: User, report: Report) -> bool:
+    return wf_can_edit(user, report)
+
+
+def _action_label(action: str) -> str:
+    return {
+        "submit_for_review": "ارسال برای بررسی",
+        "approve": "تأیید",
+        "request_revision": "نیاز به اصلاح",
+        "final_approve": "تأیید نهایی",
+    }.get(action, action)
+
+
+def _role_fa(role: Role) -> str:
+    return {
+        Role.ORG_COUNTY_EXPERT: "کارشناس شهرستان",
+        Role.ORG_COUNTY_MANAGER: "مدیر شهرستان",
+        Role.ORG_PROV_EXPERT: "کارشناس استان",
+        Role.ORG_PROV_MANAGER: "مدیر استان",
+        Role.SECRETARIAT_USER: "کارشناس دبیرخانه",
+        Role.SECRETARIAT_ADMIN: "مدیر دبیرخانه",
+    }.get(role, role.value)
 
 @router.get("", response_class=HTMLResponse)
 def page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -128,7 +176,11 @@ def page(request: Request, db: Session = Depends(get_db), user=Depends(get_curre
             reports_q = reports_q.filter(Report.current_owner_id == user.id)
         reports = reports_q.limit(200).all()
     else:
-        reports_q = q.filter(Report.org_id == user.org_id, Report.county_id == user.county_id)
+        # شهرستان: گزارش‌های شهرستان خودش + هر گزارش استانی که در صف او قرار گرفته است
+        reports_q = q.filter(
+            Report.org_id == user.org_id,
+            ((Report.county_id == user.county_id) | ((Report.county_id.is_(None)) & (Report.current_owner_id == user.id))),
+        )
         if user.role == Role.ORG_COUNTY_EXPERT:
             reports_q = reports_q.filter((Report.created_by_id == user.id) | (Report.current_owner_id == user.id))
         reports = reports_q.limit(200).all()
@@ -164,17 +216,28 @@ def create(
     request: Request,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
+    kind: str = Query(""),
 ):
     require(can_create_report(user))
-    require(user.org_id is not None and user.county_id is not None, "کاربر شهرستان باید org_id و county_id داشته باشد.", 400)
+    require(user.org_id is not None, "کاربر باید org_id داشته باشد.", 400)
+
+    # نوع گزارش
+    kind_enum = ReportKind.PROVINCIAL if (kind or "").lower() in ("provincial", "province", "ostan") else ReportKind.COUNTY
+    # محدودیت نوع گزارش بر اساس نقش
+    if kind_enum == ReportKind.PROVINCIAL:
+        require(user.role == Role.ORG_PROV_EXPERT, "فقط کارشناس استان می‌تواند گزارش استانی ایجاد کند.", 403)
+    else:
+        require(user.role == Role.ORG_COUNTY_EXPERT, "فقط کارشناس شهرستان می‌تواند گزارش شهرستان ایجاد کند.", 403)
+        require(user.county_id is not None, "کاربر شهرستان باید county_id داشته باشد.", 400)
 
     # گزارش به صورت Draft ساخته می‌شود و کاربر در صفحه‌ی ویرایش (builder) متن اولیه، بخش‌های فرم و نتیجه‌گیری را اضافه می‌کند.
     r = Report(
         org_id=user.org_id,
-        county_id=user.county_id,
+        county_id=user.county_id if kind_enum == ReportKind.COUNTY else None,
         created_by_id=user.id,
         current_owner_id=user.id,
         status=ReportStatus.DRAFT,
+        kind=kind_enum,
         content_json=dump_doc({"intro_html": "", "conclusion_html": "", "sections": [], "aggregation": {}}),
         note="",
     )
@@ -182,14 +245,52 @@ def create(
     db.commit()
     db.refresh(r)
 
+    _audit(db, r.id, user.id, action="create", field="report", before=None, after={"kind": r.kind.value})
+    db.commit()
+
     return RedirectResponse(f"/reports/{r.id}", status_code=303)
+
+
+@router.post("/{report_id}/delete")
+def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(wf_can_delete(user, r), "شما اجازه حذف این گزارش را ندارید.", 403)
+
+    # ثبت لاگ قبل از حذف
+    _audit(db, r.id, user.id, action="delete", field="report", before={"kind": r.kind.value, "status": r.status.value, "content": load_doc(r.content_json)}, after=None)
+    db.commit()
+
+    # حذف وابستگی‌ها
+    db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).delete(synchronize_session=False)
+    db.query(ReportSubmission).filter(ReportSubmission.report_id == r.id).delete(synchronize_session=False)
+    # حذف فایل‌های پیوست و رکوردها
+    atts = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).all()
+    for a in atts:
+        try:
+            if a.path and os.path.exists(a.path):
+                os.remove(a.path)
+        except Exception:
+            pass
+    db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).delete(synchronize_session=False)
+    db.query(ReportAuditLog).filter(ReportAuditLog.report_id == r.id).delete(synchronize_session=False)
+
+    db.delete(r)
+    db.commit()
+
+    return RedirectResponse("/reports", status_code=303)
 
 
 @router.get("/{report_id}", response_class=HTMLResponse)
 def view(request: Request, report_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
@@ -199,14 +300,19 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
 
     logs = db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).order_by(WorkflowLog.id.desc()).all()
 
-    actor_ids = list({l.actor_id for l in logs})
+    audit_logs = (
+        db.query(ReportAuditLog)
+        .filter(ReportAuditLog.report_id == r.id)
+        .order_by(ReportAuditLog.id.desc())
+        .limit(500)
+        .all()
+    )
+
+    actor_ids = list({l.actor_id for l in logs} | {a.actor_id for a in audit_logs})
     users_map = {u.id: u for u in db.query(User).filter(User.id.in_(actor_ids)).all()} if actor_ids else {}
     actor_map = {uid: (users_map[uid].full_name or users_map[uid].username) for uid in users_map}
 
-    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
-        actions = ["final_approve", "request_revision"] if (r.status == ReportStatus.SECRETARIAT_REVIEW and r.current_owner_id == user.id) else []
-    else:
-        actions = allowed_actions(user, r.status) if r.current_owner_id == user.id else []
+    actions = allowed_actions(user, r)
 
     action_recipients = {a: _eligible_recipients(db, r, a) for a in actions}
 
@@ -229,7 +335,7 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
     forms_map_attached = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
 
     available_subs = []
-    if user.org_id and user.county_id and user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION) and r.current_owner_id == user.id:
+    if user.org_id and user.county_id and user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and _can_edit(user, r):
         unit = db.query(OrgCountyUnit).filter(OrgCountyUnit.org_id==user.org_id, OrgCountyUnit.county_id==user.county_id).first()
         if unit:
             available_subs = db.query(Submission).filter(Submission.org_county_unit_id==unit.id).order_by(Submission.id.desc()).limit(200).all()
@@ -251,6 +357,7 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
             "report": r,
             "doc": load_doc(r.content_json),
             "logs": logs,
+            "audit_logs": audit_logs,
             "actions": actions,
             "action_recipients": action_recipients,
             "attached_subs": attached_subs,
@@ -264,8 +371,97 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
             "user": user,
             "badge_count": get_badge_count(db, user),
             "actor_map": actor_map,
+            "can_edit": _can_edit(user, r),
         },
     )
+
+
+@router.get("/{report_id}/permissions")
+def permissions(report_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """JSON permissions endpoint for SPA/React.
+
+    Returns exactly what the client needs to render buttons and recipient dropdowns.
+    """
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+
+    # What actions exist for this state, and which of them are allowed for this user
+    state_actions = list(allowed_actions_for_status(r.kind, r.status))
+    user_allowed = set(allowed_actions(user, r))
+
+    actions_payload = []
+    for action in state_actions:
+        is_allowed = action in user_allowed
+        recipients = _eligible_recipients(db, r, action) if is_allowed else []
+        try:
+            t = get_transition(r.kind, r.status, action)
+            to_status = t.to_status.value if hasattr(t.to_status, "value") else str(t.to_status)
+            recipient_roles = [role.value for role in (t.recipient_roles or ())]
+        except Exception:
+            to_status = ""
+            recipient_roles = []
+
+        actions_payload.append(
+            {
+                "action": action,
+                "label": _action_label(action),
+                "allowed": is_allowed,
+                "to_status": to_status,
+                "recipient_roles": recipient_roles,
+                "recipients": [
+                    {
+                        "id": u.id,
+                        "name": (u.full_name or u.username or str(u.id)),
+                        "role": u.role.value,
+                        "role_fa": _role_fa(u.role),
+                        "org_id": u.org_id,
+                        "county_id": u.county_id,
+                    }
+                    for u in recipients
+                ],
+            }
+        )
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    payload = {
+        "report": {
+            "id": r.id,
+            "kind": r.kind.value,
+            "status": r.status.value,
+            "org_id": r.org_id,
+            "county_id": r.county_id,
+            "created_by_id": r.created_by_id,
+            "current_owner_id": r.current_owner_id,
+            "current_owner_name": owner_name,
+        },
+        "user": {
+            "id": user.id,
+            "role": user.role.value,
+            "role_fa": _role_fa(user.role),
+            "org_id": user.org_id,
+            "county_id": user.county_id,
+        },
+        "permissions": {
+            "is_current_owner": r.current_owner_id == user.id,
+            "can_edit": wf_can_edit(user, r),
+            "can_delete": wf_can_delete(user, r),
+            "allowed_actions": sorted(list(user_allowed)),
+        },
+        "actions": actions_payload,
+    }
+
+    return JSONResponse(payload)
 
 
 @router.get("/{report_id}/sections/submission-options", response_class=HTMLResponse)
@@ -279,7 +475,7 @@ def submission_options(
     report = db.get(Report, report_id)
     require(report is not None, "گزارش یافت نشد", 404)
     # RBAC guard: can view this report only if scoped to the same org and permitted by role.
-    require(can_view_report(user, report.org_id, report.county_id))
+    require(can_view_report(user, report.org_id, report.county_id, report.current_owner_id))
     # فقط برای همان واحد (org/county) و سطح دسترسی مناسب
     require(user.org_id == report.org_id and user.county_id == report.county_id, "دسترسی ندارید", 403)
 
@@ -320,7 +516,7 @@ def submission_options(
 def download_pdf(report_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
@@ -391,14 +587,14 @@ def attach(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
         require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
     if user.role == Role.ORG_COUNTY_EXPERT:
         require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان اتصال وجود ندارد.")
+    require(_can_edit(user, r), "در این وضعیت امکان اتصال وجود ندارد.")
 
     db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
     try:
@@ -410,6 +606,8 @@ def attach(
     doc["aggregation"] = aggregate_content(db, r.id)
     doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
     r.content_json = dump_doc(doc)
+    db.commit()
+    _audit(db, r.id, user.id, action="attach_submission", field="submission_id", before=None, after={"submission_id": submission_id})
     db.commit()
 
     attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
@@ -448,18 +646,20 @@ def detach(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
         require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
     if user.role == Role.ORG_COUNTY_EXPERT:
         require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف اتصال وجود ندارد.")
+    require(_can_edit(user, r), "در این وضعیت امکان حذف اتصال وجود ندارد.")
 
     link = db.query(ReportSubmission).filter(ReportSubmission.report_id==r.id, ReportSubmission.submission_id==submission_id).first()
     if link:
         db.delete(link)
+        db.commit()
+        _audit(db, r.id, user.id, action="detach_submission", field="submission_id", before={"submission_id": submission_id}, after=None)
         db.commit()
 
     doc = load_doc(r.content_json)
@@ -470,6 +670,8 @@ def detach(
     doc["aggregation"] = aggregate_content(db, r.id)
     doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
     r.content_json = dump_doc(doc)
+    db.commit()
+    _audit(db, r.id, user.id, action="detach_submission", field="submission_id", before=None, after={"submission_id": submission_id})
     db.commit()
 
     attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
@@ -510,7 +712,7 @@ def attachments_partial(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
@@ -561,17 +763,30 @@ def delete_attachment(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
         require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
     if user.role == Role.ORG_COUNTY_EXPERT:
         require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف پیوست وجود ندارد.")
+    require(_can_edit(user, r), "در این وضعیت امکان حذف پیوست وجود ندارد.")
     att = db.get(ReportAttachment, attachment_id)
     if att and att.report_id == r.id:
+        _audit(db, r.id, user.id, action="delete_attachment", field="attachment", before={"id": att.id, "filename": att.filename, "url": att.url}, after=None)
+        # حذف فایل فیزیکی (best-effort)
+        try:
+            # در این پروژه مسیر در DB ذخیره نشده؛ از url فایل را حدس می‌زنیم.
+            u = (att.url or "").strip()
+            if u.startswith("/uploads/"):
+                fname = u.split("/uploads/", 1)[1]
+                fpath = os.path.join(UPLOAD_DIR, fname)
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+        except Exception:
+            pass
         db.delete(att)
+        db.commit()
         db.commit()
     attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
 
@@ -607,18 +822,20 @@ def update_note(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
         require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
     if user.role == Role.ORG_COUNTY_EXPERT:
         require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش متن وجود ندارد.")
-    # store HTML in note field
+    require(_can_edit(user, r), "در این وضعیت امکان ویرایش متن وجود ندارد.")
+    before = load_doc(r.content_json)
+    # store HTML in intro field
     doc = load_doc(r.content_json)
     doc["intro_html"] = note_html or ""
     r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update", field="intro_html", before=before.get("intro_html"), after=doc.get("intro_html"))
     db.commit()
     return {"ok": True}
 
@@ -632,11 +849,13 @@ def update_conclusion(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش نتیجه‌گیری وجود ندارد.")
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان ویرایش نتیجه‌گیری وجود ندارد.")
+    before = load_doc(r.content_json)
     doc = load_doc(r.content_json)
     doc["conclusion_html"] = conclusion_html or ""
     r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update", field="conclusion_html", before=before.get("conclusion_html"), after=doc.get("conclusion_html"))
     db.commit()
     return {"ok": True}
 
@@ -650,20 +869,23 @@ def add_section(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان افزودن بخش وجود ندارد.")
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان افزودن بخش وجود ندارد.")
     # ensure attached
     db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
     try:
         db.commit()
     except Exception:
         db.rollback()
+    before_doc = load_doc(r.content_json)
     doc = load_doc(r.content_json)
     # add section if not exists
     if not any(s.get("submission_id")==submission_id for s in doc.get("sections", [])):
         doc["sections"].append({"submission_id": submission_id, "description_html": ""})
     doc["aggregation"] = aggregate_content(db, r.id)
     r.content_json = dump_doc(doc)
+    db.commit()
+    _audit(db, r.id, user.id, action="add_section", field="sections", before=before_doc.get("sections"), after=doc.get("sections"), comment=f"submission_id={submission_id}")
     db.commit()
     # rebuild context for partial
     doc = load_doc(r.content_json)
@@ -682,14 +904,16 @@ def update_section_desc(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش توضیحات وجود ندارد.")
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان ویرایش توضیحات وجود ندارد.")
+    before_doc = load_doc(r.content_json)
     doc = load_doc(r.content_json)
     for s in doc.get("sections", []):
         if s.get("submission_id")==submission_id:
             s["description_html"] = description_html or ""
             break
     r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update_section", field="sections", before=before_doc.get("sections"), after=doc.get("sections"), comment=f"submission_id={submission_id}")
     db.commit()
     doc = load_doc(r.content_json)
 
@@ -707,8 +931,8 @@ def remove_section(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف بخش وجود ندارد.")
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان حذف بخش وجود ندارد.")
 
     # delete link (detach)
     link = db.query(ReportSubmission).filter(ReportSubmission.report_id==r.id, ReportSubmission.submission_id==submission_id).first()
@@ -716,12 +940,16 @@ def remove_section(
         db.delete(link)
         db.commit()
 
+    before_doc = load_doc(r.content_json)
     doc = load_doc(r.content_json)
     if isinstance(doc.get("sections"), list):
         doc["sections"] = [s for s in doc["sections"] if s.get("submission_id") != submission_id]
     doc["aggregation"] = aggregate_content(db, r.id)
     doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
     r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update", field="section_description", before=before_doc.get("sections"), after=doc.get("sections"), comment=f"submission_id={submission_id}")
+    db.commit()
+    _audit(db, r.id, user.id, action="remove_section", field="sections", before=before_doc.get("sections"), after=doc.get("sections"), comment=f"submission_id={submission_id}")
     db.commit()
 
     doc = load_doc(r.content_json)
@@ -739,8 +967,8 @@ def reorder_sections(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان تغییر ترتیب وجود ندارد.")
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان تغییر ترتیب وجود ندارد.")
 
     ids = []
     for part in (order or "").split(","):
@@ -749,6 +977,8 @@ def reorder_sections(
             ids.append(int(part))
     ids = list(dict.fromkeys(ids))
 
+    before_doc = load_doc(r.content_json)
+    before_doc = load_doc(r.content_json)
     doc = load_doc(r.content_json)
     sections = doc.get("sections") if isinstance(doc.get("sections"), list) else []
     sec_map = {s.get("submission_id"): s for s in sections if isinstance(s, dict) and s.get("submission_id") is not None}
@@ -765,6 +995,7 @@ def reorder_sections(
 
     doc["sections"] = new_sections
     r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="reorder_sections", field="sections", before=before_doc.get("sections"), after=doc.get("sections"), comment=f"order={order}")
     db.commit()
 
     doc = load_doc(r.content_json)
@@ -782,14 +1013,14 @@ async def upload_file(
     from fastapi import UploadFile
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
         require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
     if user.role == Role.ORG_COUNTY_EXPERT:
         require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان آپلود وجود ندارد.")
+    require(_can_edit(user, r), "در این وضعیت امکان آپلود وجود ندارد.")
 
     form = await request.form()
     up = form.get("file")
@@ -820,6 +1051,8 @@ async def upload_file(
         att = ReportAttachment(report_id=r.id, uploaded_by_id=user.id, filename=up.filename, url=url)
         db.add(att)
         db.commit()
+        _audit(db, r.id, user.id, action="upload_attachment", field="attachment", before=None, after={"id": att.id, "filename": up.filename, "url": url})
+        db.commit()
         return {"url": url, "name": up.filename, "id": att.id}
     require(False, "فایل معتبر نیست", 400)
 
@@ -835,7 +1068,7 @@ def do_action(
 ):
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
-    require(can_view_report(user, r.org_id, r.county_id))
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
     # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
     if user.role == Role.ORG_PROV_EXPERT:
@@ -854,7 +1087,7 @@ def do_action(
         require(any(u.id == rid for u in recipients), "گیرنده انتخاب‌شده معتبر نیست.", 400)
 
     from_status = r.status
-    to_status = transition(r.status, action)
+    to_status = get_transition(r.kind, r.status, action).to_status
 
     r.status = to_status
     if action == "final_approve":
@@ -900,10 +1133,7 @@ def do_action(
     db.commit()
 
     # Refresh actions box after transition
-    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
-        actions2 = ["final_approve", "request_revision"] if (r.status == ReportStatus.SECRETARIAT_REVIEW and r.current_owner_id == user.id) else []
-    else:
-        actions2 = allowed_actions(user, r.status) if r.current_owner_id == user.id else []
+    actions2 = allowed_actions(user, r)
     action_recipients2 = {a: _eligible_recipients(db, r, a) for a in actions2}
 
 

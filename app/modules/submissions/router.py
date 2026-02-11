@@ -39,7 +39,11 @@ def page(request: Request, db: Session = Depends(get_db), user=Depends(get_curre
     if not is_secretariat(user):
         qf = qf.filter(FormTemplate.org_id == user.org_id)
         if is_county(user):
-            qf = qf.filter((FormTemplate.county_id == None) | (FormTemplate.county_id == user.county_id))
+            # شهرستان فقط فرم‌های عمومی + شهرستان خودش (و نه فرم‌های استانی)
+            qf = qf.filter(
+                (FormTemplate.scope == "all")
+                | ((FormTemplate.scope == "county") & (FormTemplate.county_id == user.county_id))
+            )
     forms = qf.all()
     forms_map = {f.id: f.title for f in forms}
     return request.app.state.templates.TemplateResponse(
@@ -56,7 +60,8 @@ def new_page(request: Request, form_id: int, db: Session = Depends(get_db), user
     if not is_secretariat(user):
         require(form.org_id == user.org_id, "دسترسی به این فرم ندارید", 403)
         if is_county(user):
-            require((form.county_id is None) or (form.county_id == user.county_id), "دسترسی به این فرم ندارید", 403)
+            require(form.scope != "province", "دسترسی به این فرم ندارید", 403)
+            require((form.scope == "all") or (form.county_id == user.county_id), "دسترسی به این فرم ندارید", 403)
     schema = _parse_schema(form.schema_json if form else "{}")
     return request.app.state.templates.TemplateResponse(
         "submissions/new.html",
@@ -79,7 +84,8 @@ async def create(
     if not is_secretariat(user):
         require(form.org_id == user.org_id, "دسترسی به این فرم ندارید", 403)
         if is_county(user):
-            require((form.county_id is None) or (form.county_id == user.county_id), "دسترسی به این فرم ندارید", 403)
+            require(form.scope != "province", "دسترسی به این فرم ندارید", 403)
+            require((form.scope == "all") or (form.county_id == user.county_id), "دسترسی به این فرم ندارید", 403)
     schema = _parse_schema(form.schema_json if form else "{}")
 
     try:
