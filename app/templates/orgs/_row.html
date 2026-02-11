@@ -1,0 +1,7 @@
+<tr id="org-{{ org.id }}">
+  <td>{{ org.id }}</td>
+  <td>{{ org.name }}</td>
+  <td>
+    <button hx-delete="/orgs/{{ org.id }}" hx-target="#org-{{ org.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
+  </td>
+</tr>

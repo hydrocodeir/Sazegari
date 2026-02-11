@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block page_title %}گزارش #{{ report.id }}{% endblock %}
+{% block content %}
+{% set can_edit = (report.status.value in ["draft","needs_revision"] and report.current_owner_id == user.id) %}
+
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card p-3 border-0 shadow-sm">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+        <div>
+          <div class="h5 m-0">گزارش #{{ report.id }}</div>
+          <div class="text-muted small">
+            وضعیت: <span class="badge text-bg-secondary">{{ report.status.value }}</span>
+            {% if report.current_owner_id %} | در صف: <span class="badge text-bg-warning">{{ owner_name }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="/reports">بازگشت</a>
+          <a class="btn btn-outline-primary btn-sm" href="/reports/{{ report.id }}/pdf">دانلود PDF</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left: Builder / Full report -->
+  <div class="col-lg-8">
+
+    <!-- 1) Intro -->
+    <div class="card p-3 border-0 shadow-sm mb-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="h6 m-0">۱) متن ابتدایی / پیوست</div>
+        {% if can_edit %}
+          <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveIntro()">ذخیره متن ابتدایی</button>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+        <div id="introEditor" class="mt-3"></div>
+        <input type="hidden" id="intro_html" value="{{ doc.intro_html | e }}">
+        <div class="d-flex gap-2 mt-3 align-items-center">
+          <form id="uploadForm" class="d-flex gap-2 align-items-center" onsubmit="return uploadReportFile(event)">
+            <input class="form-control form-control-sm" type="file" id="reportFile" required />
+            <button class="btn btn-sm btn-outline-secondary" type="submit">آپلود فایل</button>
+          </form>
+          <div class="text-muted small">پس از آپلود، لینک فایل داخل متن درج می‌شود و در بخش «پیوست‌ها» هم ذخیره می‌شود.</div>
+        </div>
+      {% else %}
+        <div class="mt-2">{{ doc.intro_html | safe }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Attachments -->
+    <div class="card p-3 border-0 shadow-sm mb-3" id="fileAttachmentsBox">
+      {% include "reports/_attachments_files.html" %}
+    </div>
+
+    <!-- 2) Sections -->
+    <div class="card p-3 border-0 shadow-sm mb-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="h6 m-0">۲) فرم‌های انتخابی و جداول</div>
+        {% if can_edit %}
+          <div class="text-muted small">فرم/ثبت را انتخاب کن و به گزارش اضافه کن.</div>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+        <hr>
+        {% if available_forms|length == 0 %}
+          <div class="alert alert-warning py-2 small mb-0">هنوز هیچ «ثبت داده‌ای» برای این واحد وجود ندارد. ابتدا فرم‌ها را تکمیل کنید، سپس آن‌ها را به گزارش اضافه کنید.</div>
+        {% else %}
+        <form hx-post="/reports/{{ report.id }}/sections/add" hx-target="#sectionsBox" hx-swap="innerHTML" class="row g-2 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label small text-muted">1) انتخاب فرم</label>
+            <select name="form_id" class="form-select form-select-sm"
+                    hx-get="/reports/{{ report.id }}/sections/submission-options"
+                    hx-trigger="load, change"
+                    hx-target="#submissionSelect"
+                    hx-swap="innerHTML">
+              {% for f in available_forms %}
+                <option value="{{ f.id }}">{{ f.title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label small text-muted">2) انتخاب ثبت از همان فرم</label>
+            <select id="submissionSelect" name="submission_id" class="form-select form-select-sm" required>
+              <option value="">ابتدا فرم را انتخاب کنید…</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <button type="submit" class="btn btn-primary btn-sm w-100">افزودن به گزارش</button>
+          </div>
+        </form>
+        {% endif %}
+      {% endif %}
+
+      <div class="mt-3" id="sectionsBox">
+        {% include "reports/_sections.html" %}
+      </div>
+    </div>
+
+    <!-- 3) Conclusion -->
+    <div class="card p-3 border-0 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="h6 m-0">۳) نتیجه‌گیری و نتایج</div>
+        {% if can_edit %}
+          <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveConclusion()">ذخیره نتیجه‌گیری</button>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+        <div id="conclusionEditor" class="mt-3"></div>
+        <input type="hidden" id="conclusion_html" value="{{ doc.conclusion_html | e }}">
+      {% else %}
+        <div class="mt-2">{{ doc.conclusion_html | safe }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: Workflow/History -->
+  <div class="col-lg-4">
+    <div class="card p-3 border-0 shadow-sm mb-3" id="actionsBox">
+      {% include "reports/_actions.html" %}
+    </div>
+
+    <div class="card p-3 border-0 shadow-sm">
+      <h6 class="mb-3">تاریخچه گردش‌کار</h6>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>#</th><th>action</th><th>from</th><th>to</th><th>actor</th></tr></thead>
+          <tbody>
+            {% for l in logs %}
+              <tr>
+                <td>{{ l.id }}</td>
+                <td>{{ l.action }}</td>
+                <td>{{ l.from_status }}</td>
+                <td>{{ l.to_status }}</td>
+                <td>{{ actor_map.get(l.actor_id, l.actor_id) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+let quillIntro = null;
+let quillConclusion = null;
+let quillSections = {};
+let sortable = null;
+
+function makeQuill(elId, initialHtml){
+  const q = new Quill("#"+elId, { theme: "snow", modules: { toolbar: [
+    ["bold","italic","underline"],
+    [{"list":"ordered"},{"list":"bullet"}],
+    ["link"],
+    ["clean"]
+  ]}});
+  q.root.innerHTML = initialHtml || "";
+  return q;
+}
+
+function initSectionEditors(){
+  quillSections = {};
+  document.querySelectorAll("[id^='secEditor_']").forEach(ed=>{
+    const sid = ed.id.replace("secEditor_","");
+    const init = document.getElementById("secHtml_"+sid)?.value || "";
+    quillSections[sid] = makeQuill(ed.id, init);
+  });
+}
+
+function initSortable(){
+  const container = document.getElementById("sectionsContainer");
+  if(!container) return;
+  if(sortable){ sortable.destroy(); sortable = null; }
+  sortable = new Sortable(container, {
+    animation: 150,
+    handle: ".drag-handle",
+    onEnd: async function(){
+      const ids = Array.from(container.querySelectorAll("[data-sid]")).map(el=>el.getAttribute("data-sid"));
+      const fd = new FormData();
+      fd.append("order", ids.join(","));
+      const res = await fetch(`/reports/{{ report.id }}/sections/reorder`, {method:"POST", body: fd});
+      const htmlOut = await res.text();
+      document.getElementById("sectionsBox").innerHTML = htmlOut;
+      initSectionEditors();
+      initSortable();
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  {% if can_edit %}
+    quillIntro = makeQuill("introEditor", document.getElementById("intro_html").value);
+    quillConclusion = makeQuill("conclusionEditor", document.getElementById("conclusion_html").value);
+    initSectionEditors();
+    initSortable();
+  {% endif %}
+});
+
+// Re-init after HTMX swap (add section / remove etc.)
+document.body.addEventListener("htmx:afterSwap", (e)=>{
+  if(e.target && e.target.id === "sectionsBox"){
+    {% if can_edit %}
+      initSectionEditors();
+      initSortable();
+    {% endif %}
+  }
+});
+
+async function saveIntro(){
+  const html = quillIntro.root.innerHTML;
+  const fd = new FormData();
+  fd.append("note_html", html);
+  const res = await fetch(`/reports/{{ report.id }}/update_note`, {method:"POST", body: fd});
+  if(res.ok) showToast("ذخیره شد","success");
+  else showToast("خطا در ذخیره","danger");
+}
+
+async function saveConclusion(){
+  const html = quillConclusion.root.innerHTML;
+  const fd = new FormData();
+  fd.append("conclusion_html", html);
+  const res = await fetch(`/reports/{{ report.id }}/update_conclusion`, {method:"POST", body: fd});
+  if(res.ok) showToast("ذخیره شد","success");
+  else showToast("خطا در ذخیره","danger");
+}
+
+async function saveSectionDesc(submissionId){
+  const q = quillSections[String(submissionId)];
+  if(!q) return;
+  const html = q.root.innerHTML;
+  const fd = new FormData();
+  fd.append("submission_id", submissionId);
+  fd.append("description_html", html);
+  const res = await fetch(`/reports/{{ report.id }}/sections/update`, {method:"POST", body: fd});
+  const htmlOut = await res.text();
+  document.getElementById("sectionsBox").innerHTML = htmlOut;
+  initSectionEditors();
+  initSortable();
+}
+
+async function removeSection(submissionId){
+  if(!confirm("این فرم از گزارش حذف شود؟")) return;
+  const fd = new FormData();
+  fd.append("submission_id", submissionId);
+  const res = await fetch(`/reports/{{ report.id }}/sections/remove`, {method:"POST", body: fd});
+  const htmlOut = await res.text();
+  document.getElementById("sectionsBox").innerHTML = htmlOut;
+  initSectionEditors();
+  initSortable();
+}
+
+async function uploadReportFile(ev){
+  ev.preventDefault();
+  const input = document.getElementById("reportFile");
+  if(!input || !input.files || !input.files[0]) return false;
+
+  const fd = new FormData();
+  fd.append("file", input.files[0]);
+  const res = await fetch(`/reports/{{ report.id }}/upload`, {method:"POST", body: fd});
+  if(!res.ok){ showToast("آپلود ناموفق","danger"); return false; }
+  const data = await res.json();
+  const url = data.url;
+  const name = data.name || "file";
+
+  // insert link in intro editor
+  const range = quillIntro.getSelection(true);
+  quillIntro.insertText(range.index, name, "link", url);
+  quillIntro.insertText(range.index + name.length, " ");
+
+  // refresh attachments list without full reload
+  try{
+    const res2 = await fetch(`/reports/{{ report.id }}/attachments/partial`);
+    if(res2.ok){
+      const box = document.getElementById("fileAttachmentsBox");
+      box.innerHTML = await res2.text();
+      if(window.htmx){ htmx.process(box); }
+    }
+  }catch(e){}
+  showToast("فایل اضافه شد","success");
+  return false;
+}
+</script>
+{% endblock %}

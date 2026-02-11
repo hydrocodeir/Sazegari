@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="m-0">گزارش‌ها</h1>
+  {% if badge_count and badge_count>0 %}
+    <span class="badge text-bg-danger">کارهای در انتظار شما: {{ badge_count }}</span>
+  {% endif %}
+</div>
+
+<div class="card p-3 mb-3">
+  <h5 class="mb-2">ایجاد گزارش جدید</h5>
+  {% if user.role.value.startswith('org_county') %}
+    <div class="text-muted small mb-3">
+      ابتدا متن/پیوست‌های اولیه را اضافه کن، سپس هر تعداد «فرم» را به گزارش متصل کن و برای هر فرم توضیح بنویس؛ در پایان نتیجه‌گیری را ثبت و گزارش را ارسال کن.
+    </div>
+    <form method="post" action="/reports">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i>
+        ایجاد گزارش جدید
+      </button>
+    </form>
+  {% else %}
+    <div class="text-muted small">ایجاد گزارش فقط برای کاربران شهرستان فعال است.</div>
+  {% endif %}
+</div>
+
+<div class="card p-3">
+  <h5>لیست گزارش‌ها</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>#</th><th>org</th><th>county</th><th>status</th><th>owner</th><th></th></tr></thead>
+      <tbody>
+        {% for r in reports %}
+          <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.org_id }}</td>
+            <td>{{ r.county_id }}</td>
+            <td><span class="badge text-bg-secondary">{{ r.status.value }}</span></td>
+            <td>{{ (owner_names|default({})).get(r.current_owner_id, r.current_owner_id) }}</td>
+            <td><a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">باز کردن</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

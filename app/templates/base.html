@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}سامانه سازگاری با کم‌آبی{% endblock %}</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</head>
+
+<body class="bg-body-tertiary">
+  <div class="app-shell">
+
+    <!-- Sidebar -->
+    <aside class="app-sidebar">
+      <div class="sidebar-brand">
+        <a href="/" class="d-flex align-items-center gap-2 text-decoration-none">
+          <img src="/static/img/logo.svg" alt="Logo" height="32">
+        </a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-caption">منو</div>
+
+        <a class="sidebar-link {% if request.url.path=='/' %}active{% endif %}" href="/">
+          <i class="bi bi-speedometer2"></i><span>داشبورد</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/submissions') %}active{% endif %}" href="/submissions">
+          <i class="bi bi-ui-checks-grid"></i><span>ثبت داده</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}" href="/reports">
+          <i class="bi bi-file-earmark-text"></i><span>گزارش‌ها</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/notifications') %}active{% endif %}" href="/notifications">
+          <i class="bi bi-bell"></i><span>اعلان‌ها</span>
+          {% if badge_count and badge_count>0 %}
+            <span class="badge text-bg-danger ms-auto">{{ badge_count }}</span>
+          {% endif %}
+        </a>
+      </div>
+
+      {% if user and user.role and user.role.value.startswith("secretariat") %}
+      <div class="sidebar-section mt-2">
+        <div class="sidebar-caption">مدیریت</div>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/orgs') %}active{% endif %}" href="/orgs">
+          <i class="bi bi-diagram-3"></i><span>ارگان‌ها</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/counties') %}active{% endif %}" href="/counties">
+          <i class="bi bi-geo-alt"></i><span>شهرستان‌ها</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/org-counties') %}active{% endif %}" href="/org-counties">
+          <i class="bi bi-link-45deg"></i><span>ارگان↔شهرستان</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/forms') %}active{% endif %}" href="/forms">
+          <i class="bi bi-card-checklist"></i><span>فرم‌ها</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/policy') %}active{% endif %}" href="/policy">
+          <i class="bi bi-shield-lock"></i><span>Policy Matrix</span>
+        </a>
+
+        <a class="sidebar-link {% if request.url.path.startswith('/users') %}active{% endif %}" href="/users">
+          <i class="bi bi-people"></i><span>کاربران</span>
+        </a>
+      </div>
+      {% endif %}
+
+      <div class="sidebar-footer mt-auto">
+        {% if user %}
+          <div class="small text-muted mb-2">ورود با:</div>
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div class="text-truncate">
+              <div class="fw-semibold text-truncate">{{ user.full_name or user.username }}</div>
+              <div class="small text-muted text-truncate">{{ user.role_label }}</div>
+            </div>
+            <form method="post" action="/logout" class="m-0">
+              <button type="submit" class="btn btn-sm btn-outline-danger">خروج</button>
+            </form>
+          </div>
+        {% else %}
+          <a class="btn btn-sm btn-primary w-100" href="/login">ورود</a>
+        {% endif %}
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="app-main">
+      <!-- Topbar -->
+      <header class="app-topbar">
+        <button class="btn btn-sm btn-outline-secondary d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar">
+          <i class="bi bi-list"></i>
+        </button>
+
+        <div class="topbar-title">
+          {% block page_title %}سامانه سازگاری با کم‌آبی{% endblock %}
+        </div>
+
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <div class="topbar-chip">
+            <i class="bi bi-shield-check"></i>
+            <span class="small">{{ user.role_label if user else "Guest" }}</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="container-fluid py-3">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="app-footer">
+        <div class="container-fluid text-muted small">
+          © سامانه سازگاری با کم‌آبی
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Mobile Sidebar (Offcanvas) -->
+  <div class="offcanvas offcanvas-start d-lg-none" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="mobileSidebarLabel">منو</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+      <a class="btn btn-outline-primary w-100 mb-2" href="/">داشبورد</a>
+      <a class="btn btn-outline-primary w-100 mb-2" href="/submissions">ثبت داده</a>
+      <a class="btn btn-outline-primary w-100 mb-2" href="/reports">گزارش‌ها</a>
+      <a class="btn btn-outline-primary w-100 mb-2" href="/notifications">اعلان‌ها {% if badge_count and badge_count>0 %}<span class="badge text-bg-danger ms-1">{{ badge_count }}</span>{% endif %}</a>
+
+      {% if user and user.role and user.role.value.startswith("secretariat") %}
+        <hr>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/orgs">ارگان‌ها</a>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/counties">شهرستان‌ها</a>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/org-counties">ارگان↔شهرستان</a>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/forms">فرم‌ها</a>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/users">کاربران</a>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Global Loading (HTMX) -->
+  <div id="globalLoading" class="global-loading">
+    <div class="spinner-border text-primary" role="status" aria-label="Loading"></div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toastContainer" class="toast-container position-fixed bottom-0 start-0 p-3" style="z-index: 2000;"></div>
+
+</body>
+</html>

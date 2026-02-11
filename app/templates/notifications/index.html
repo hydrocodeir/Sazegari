@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="m-0">اعلان‌ها</h1>
+  <div class="d-flex gap-2 align-items-center">
+    {% if unread and unread>0 %}
+      <span class="badge text-bg-danger">خوانده‌نشده: {{ unread }}</span>
+    {% endif %}
+    <form method="post" action="/notifications/mark_all_read" class="m-0">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">همه را خوانده‌شده کن</button>
+    </form>
+  </div>
+</div>
+
+<div class="card p-3">
+  {% if notes and notes|length>0 %}
+    <div class="list-group">
+      {% for n in notes %}
+        <div class="list-group-item d-flex justify-content-between align-items-start">
+          <div>
+            <div class="d-flex gap-2 align-items-center">
+              {% if not n.is_read %}
+                <span class="badge text-bg-danger">جدید</span>
+              {% else %}
+                <span class="badge text-bg-secondary">خوانده‌شده</span>
+              {% endif %}
+              <span class="badge text-bg-info">{{ n.type }}</span>
+              <span class="text-muted small">#{{ n.id }}</span>
+            </div>
+            <div class="mt-2">{{ n.message }}</div>
+            {% if n.report_id %}
+              <div class="mt-1">
+                <a href="/reports/{{ n.report_id }}" class="btn btn-sm btn-outline-primary">رفتن به گزارش #{{ n.report_id }}</a>
+              </div>
+            {% endif %}
+          </div>
+
+          {% if not n.is_read %}
+            <form method="post" action="/notifications/mark_read" class="m-0">
+              <input type="hidden" name="notification_id" value="{{ n.id }}">
+              <button type="submit" class="btn btn-sm btn-outline-success">خوانده شد</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-muted">اعلانی وجود ندارد.</div>
+  {% endif %}
+</div>
+{% endblock %}

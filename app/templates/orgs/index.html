@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ارگان‌ها</h1>
+
+<div class="card">
+  <form hx-post="/orgs" hx-target="#orgs-tbody" hx-swap="afterbegin">
+    <input name="name" placeholder="نام ارگان" required />
+    <button type="submit">افزودن</button>
+  </form>
+  <p class="muted">دسترسی: فقط مدیر دبیرخانه</p>
+</div>
+
+<table>
+  <thead><tr><th>#</th><th>نام</th><th></th></tr></thead>
+  <tbody id="orgs-tbody">
+    {% for org in orgs %}
+      {% include "orgs/_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>شهرستان‌ها</h1>
+
+<div class="card">
+  <form hx-post="/counties" hx-target="#counties-tbody" hx-swap="afterbegin">
+    <input name="name" placeholder="نام شهرستان" required />
+    <button type="submit">افزودن</button>
+  </form>
+  <p class="muted">دسترسی: فقط مدیر دبیرخانه</p>
+</div>
+
+<table>
+  <thead><tr><th>#</th><th>نام</th><th></th></tr></thead>
+  <tbody id="counties-tbody">
+    {% for county in counties %}
+      {% include "counties/_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

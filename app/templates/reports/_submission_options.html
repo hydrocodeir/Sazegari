@@ -1,0 +1,6 @@
+<option value="">ثبت را انتخاب کنید…</option>
+{% for s in subs %}
+  <option value="{{ s.id }}">
+    {{ s.id }} — {{ forms_map_available.get(s.form_id, s.form_id) }}
+  </option>
+{% endfor %}

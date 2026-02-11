@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-3">فرم‌ها</h1>
+
+<div class="card p-3 mb-3">
+  <form hx-post="/forms" hx-target="#forms-tbody" hx-swap="afterbegin">
+    <div class="row g-2">
+      <div class="col-md-4">
+        <label class="form-label">ارگان</label>
+        <select name="org_id" class="form-select" required>
+          {% for o in orgs %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">شهرستان (اختیاری)</label>
+        <select name="county_id" class="form-select">
+          <option value="">همه شهرستان‌ها</option>
+          {% for c in counties %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">عنوان فرم</label>
+        <input name="title" class="form-control" placeholder="عنوان فرم" required />
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="border rounded p-3 mb-2" id="formBuilder">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <b>فرم‌ساز گرافیکی</b>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addFieldRow()">+ افزودن فیلد</button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+  <tr>
+    <th>کلید (English)</th>
+    <th>برچسب</th>
+    <th>نوع</th>
+    <th>الزامی</th>
+    <th>regex</th>
+    <th>options</th>
+    <th></th>
+  </tr>
+</thead>
+
+          <tbody id="fieldsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="text-muted small mt-2">
+        مثال کلید: <code>year</code> یا <code>water_usage</code> (بدون فاصله)
+      </div>
+    </div>
+
+    <input type="hidden" name="schema_text" id="schema_text" value="{}"/>
+
+    <details class="mt-2">
+      <summary class="small text-muted">نمایش/ویرایش JSON (اختیاری)</summary>
+      <textarea id="schema_text_preview" rows="8" class="form-control mt-2">{}</textarea>
+      <div class="small text-muted mt-1">اگر اینجا را تغییر بدهی، هنگام ارسال فرم همین مقدار ذخیره می‌شود.</div>
+    </details>
+
+    <button type="submit" class="btn btn-primary mt-3">افزودن فرم</button>
+    <p class="text-muted small mt-2 mb-0">دسترسی: فقط مدیر دبیرخانه</p>
+  </form>
+</div>
+
+<div class="card p-3">
+  <h5>لیست فرم‌ها</h5>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+  <tr>
+    <th>کلید (English)</th>
+    <th>برچسب</th>
+    <th>نوع</th>
+    <th>الزامی</th>
+    <th>regex</th>
+    <th>options</th>
+    <th></th>
+  </tr>
+</thead>
+
+      <tbody id="forms-tbody">
+        {% for form in forms %}
+          {% include "forms/_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

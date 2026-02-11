@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40" viewBox="0 0 160 40">
+  <rect x="0" y="0" width="160" height="40" rx="10" fill="#0d6efd"/>
+  <path d="M20 28c6-3 10-9 12-16 2 7 6 13 12 16-6 3-10 1-12-2-2 3-6 5-12 2Z" fill="#fff" opacity="0.9"/>
+  <text x="48" y="26" font-family="Tahoma, Arial" font-size="16" fill="#fff">سازگاری کم‌آبی</text>
+</svg>

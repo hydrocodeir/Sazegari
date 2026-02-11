@@ -1,0 +1,32 @@
+<h5>اقدامات</h5>
+<div class="text-muted small mb-2">وضعیت فعلی: <b>{{ report.status.value }}</b></div>
+
+{% if actions|length == 0 %}
+  <div class="text-muted">این گزارش در صف شما نیست یا اقدامی برای این وضعیت ندارید.</div>
+{% else %}
+  {% for act in actions %}
+    <form hx-post="/reports/{{ report.id }}/action" hx-target="#actionsBox" hx-swap="innerHTML" class="border rounded p-2 mb-2">
+      <input type="hidden" name="action" value="{{ act }}">
+
+      {% if act != "final_approve" %}
+        <label class="form-label mb-1">ارسال به</label>
+        <select name="recipient_id" class="form-select form-select-sm" required>
+          <option value="">-- انتخاب گیرنده --</option>
+          {% for u in (action_recipients.get(act) or []) %}
+            <option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+
+      <label class="form-label mt-2 mb-1">توضیح (اختیاری)</label>
+      <input name="comment" class="form-control form-control-sm" placeholder="توضیح کوتاه...">
+
+      <button type="submit" class="btn btn-sm btn-primary mt-2">
+        {% if act == "submit_for_review" %}ارسال برای بررسی{% endif %}
+        {% if act == "approve" %}تأیید و ارسال{% endif %}
+        {% if act == "request_revision" %}نیاز به اصلاح{% endif %}
+        {% if act == "final_approve" %}تأیید نهایی{% endif %}
+      </button>
+    </form>
+  {% endfor %}
+{% endif %}

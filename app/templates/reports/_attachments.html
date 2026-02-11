@@ -1,0 +1,26 @@
+<h5 class="mb-3">فرم‌های متصل به گزارش</h5>
+
+{% if attached_subs and attached_subs|length>0 %}
+  <div class="list-group mb-2">
+    {% for s in attached_subs %}
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <div class="d-flex flex-column">
+          <div class="d-flex gap-2 align-items-center">
+            <b>Submission #{{ s.id }}</b>
+            <span class="badge text-bg-secondary">{{ forms_map_attached.get(s.form_id, "form#"+(s.form_id|string)) }}</span>
+          </div>
+          <a class="small mt-1" href="/submissions/{{ s.id }}">مشاهده جزئیات ثبت</a>
+        </div>
+
+        {% if report.status.value in ["draft","needs_revision"] and report.current_owner_id == user.id %}
+          <form hx-post="/reports/{{ report.id }}/detach" hx-target="#attachmentsBox" hx-swap="innerHTML" class="m-0">
+            <input type="hidden" name="submission_id" value="{{ s.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">حذف اتصال</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="text-muted">هنوز هیچ فرم/ثبت به این گزارش متصل نشده است.</div>
+{% endif %}

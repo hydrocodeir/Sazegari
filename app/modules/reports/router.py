@@ -1,0 +1,915 @@
+import json
+import os
+import uuid
+from fastapi import APIRouter, Request, Depends, Form, Query
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.core.config import settings
+from app.auth.deps import get_current_user
+from app.core.rbac import require, can_view_report, can_create_report, allowed_actions, transition
+from app.db.models.report import Report, ReportStatus
+from app.db.models.workflow_log import WorkflowLog
+from app.db.models.report_submission import ReportSubmission
+from app.db.models.report_attachment import ReportAttachment
+from app.db.models.submission import Submission
+from app.db.models.form_template import FormTemplate
+from app.db.models.org_county import OrgCountyUnit
+from app.db.models.user import User, Role
+from app.utils.badges import get_badge_count
+from app.utils.report_agg import aggregate_content
+from app.utils.report_doc import load_doc, dump_doc
+from app.utils.notify import notify
+
+router = APIRouter(prefix="/reports", tags=["reports"])
+
+UPLOAD_DIR = settings.UPLOAD_DIR
+
+def _linked_submission_ids(db: Session, report_id: int) -> list[int]:
+    links = db.query(ReportSubmission).filter(ReportSubmission.report_id == report_id).all()
+    return [l.submission_id for l in links]
+
+def _sync_sections(doc: dict, linked_ids: list[int]) -> dict:
+    """Ensure doc['sections'] exists and only references attached submissions.
+    If sections is empty but there are linked submissions, create sections in linked order.
+    """
+    linked_set = set(linked_ids)
+    sections = doc.get("sections") if isinstance(doc, dict) else None
+    if not isinstance(sections, list):
+        sections = []
+    # drop sections that are no longer attached
+    sections = [s for s in sections if isinstance(s, dict) and s.get("submission_id") in linked_set]
+    if not sections and linked_ids:
+        sections = [{"submission_id": sid, "description_html": ""} for sid in linked_ids]
+    doc["sections"] = sections
+    return doc
+
+
+
+
+def _last_sender_user(db: Session, report: Report) -> User | None:
+    """آخرین ارسال‌کننده‌ی «رو به بالا» به وضعیت فعلی گزارش.
+
+    این تابع برای action = request_revision استفاده می‌شود: وقتی یک مرحله نیاز به اصلاح دارد
+    باید به مرحله‌ی قبلی (فرد/سمتی که گزارش را از او دریافت کرده‌ایم در مسیر *ارسال رو به بالا*)
+    برگردانده شود.
+
+    نکته: ورود به یک وضعیت می‌تواند هم با «ارسال/تأیید رو به بالا» اتفاق بیفتد و هم با
+    «برگشت برای اصلاح». برای پیدا کردن ارسال‌کننده‌ی صحیح، لاگ‌هایی که action = request_revision
+    هستند را نادیده می‌گیریم.
+
+    در صورت نبود لاگ مناسب، به created_by_id برمی‌گردیم.
+    """
+    # NOTE: WorkflowLog در این پروژه timestamp ندارد؛ پس id (auto-increment) معیار ترتیب است.
+    log = (
+        db.query(WorkflowLog)
+        .filter(
+            WorkflowLog.report_id == report.id,
+            WorkflowLog.to_status == report.status,
+            WorkflowLog.action != "request_revision",
+        )
+        .order_by(WorkflowLog.id.desc())
+        .first()
+    )
+
+    sender_id = (log.actor_id if log and getattr(log, "actor_id", None) else None) or report.created_by_id
+    if not sender_id:
+        return None
+    return db.get(User, int(sender_id))
+
+def _eligible_recipients(db: Session, report: Report, action: str) -> list[User]:
+    """گیرنده‌های مجاز برای هر اقدام (بر اساس workflow و محدوده ارگان/شهرستان)."""
+    if action == "submit_for_review":
+        # county expert -> county manager (same org+county)
+        return db.query(User).filter(
+            User.role == Role.ORG_COUNTY_MANAGER,
+            User.org_id == report.org_id,
+            User.county_id == report.county_id,
+        ).all()
+
+    if action == "approve":
+        if report.status in (ReportStatus.COUNTY_EXPERT_REVIEW,):
+            # legacy: treat same as county manager review
+            return db.query(User).filter(User.role == Role.ORG_PROV_EXPERT, User.org_id == report.org_id).all()
+        if report.status == ReportStatus.COUNTY_MANAGER_REVIEW:
+            return db.query(User).filter(User.role == Role.ORG_PROV_EXPERT, User.org_id == report.org_id).all()
+        if report.status == ReportStatus.PROV_EXPERT_REVIEW:
+            return db.query(User).filter(User.role == Role.ORG_PROV_MANAGER, User.org_id == report.org_id).all()
+        if report.status == ReportStatus.PROV_MANAGER_REVIEW:
+            return db.query(User).filter(User.role.in_([Role.SECRETARIAT_USER, Role.SECRETARIAT_ADMIN])).all()
+
+    if action == "request_revision":
+        # Send back to the person we received the report from (previous step).
+        sender = _last_sender_user(db, report)
+        return [sender] if sender else []
+
+    return []
+
+def _can_act(user: User, report: Report, action: str) -> bool:
+    if report.status == ReportStatus.FINAL_APPROVED:
+        return False
+
+    # Secretarial step
+    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
+        return report.current_owner_id == user.id and report.status == ReportStatus.SECRETARIAT_REVIEW and action in ("final_approve", "request_revision")
+
+    # Others: must own the report
+    return report.current_owner_id == user.id and action in allowed_actions(user, report.status)
+
+@router.get("", response_class=HTMLResponse)
+def page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    q = db.query(Report).order_by(Report.id.desc())
+    if user.role.value.startswith("secretariat"):
+        reports = q.limit(200).all()
+    elif user.role.value.startswith("org_prov"):
+        reports_q = q.filter(Report.org_id == user.org_id)
+        if user.role == Role.ORG_PROV_EXPERT:
+            reports_q = reports_q.filter(Report.current_owner_id == user.id)
+        reports = reports_q.limit(200).all()
+    else:
+        reports_q = q.filter(Report.org_id == user.org_id, Report.county_id == user.county_id)
+        if user.role == Role.ORG_COUNTY_EXPERT:
+            reports_q = reports_q.filter((Report.created_by_id == user.id) | (Report.current_owner_id == user.id))
+        reports = reports_q.limit(200).all()
+
+    subs = []
+    if user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and user.org_id and user.county_id:
+        unit = db.query(OrgCountyUnit).filter(OrgCountyUnit.org_id==user.org_id, OrgCountyUnit.county_id==user.county_id).first()
+        if unit:
+            subs = db.query(Submission).filter(Submission.org_county_unit_id==unit.id).order_by(Submission.id.desc()).limit(200).all()
+
+    forms_map_subs = {}
+    if subs:
+        fids = list({s.form_id for s in subs})
+        forms_map_subs = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+
+
+    # Map owner user_id -> display name for list view
+    owner_names = {}
+    owner_ids = list({r.current_owner_id for r in reports if getattr(r, 'current_owner_id', None)})
+    if owner_ids:
+        owner_names = {
+            u.id: (u.full_name or u.username or str(u.id))
+            for u in db.query(User).filter(User.id.in_(owner_ids)).all()
+        }
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/index.html",
+        {"request": request, "reports": reports, "subs": subs, "forms_map_subs": forms_map_subs, "owner_names": owner_names, "user": user, "badge_count": get_badge_count(db, user)},
+    )
+
+@router.post("")
+def create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    require(can_create_report(user))
+    require(user.org_id is not None and user.county_id is not None, "کاربر شهرستان باید org_id و county_id داشته باشد.", 400)
+
+    # گزارش به صورت Draft ساخته می‌شود و کاربر در صفحه‌ی ویرایش (builder) متن اولیه، بخش‌های فرم و نتیجه‌گیری را اضافه می‌کند.
+    r = Report(
+        org_id=user.org_id,
+        county_id=user.county_id,
+        created_by_id=user.id,
+        current_owner_id=user.id,
+        status=ReportStatus.DRAFT,
+        content_json=dump_doc({"intro_html": "", "conclusion_html": "", "sections": [], "aggregation": {}}),
+        note="",
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+
+    return RedirectResponse(f"/reports/{r.id}", status_code=303)
+
+
+@router.get("/{report_id}", response_class=HTMLResponse)
+def view(request: Request, report_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+
+    logs = db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).order_by(WorkflowLog.id.desc()).all()
+
+    actor_ids = list({l.actor_id for l in logs})
+    users_map = {u.id: u for u in db.query(User).filter(User.id.in_(actor_ids)).all()} if actor_ids else {}
+    actor_map = {uid: (users_map[uid].full_name or users_map[uid].username) for uid in users_map}
+
+    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
+        actions = ["final_approve", "request_revision"] if (r.status == ReportStatus.SECRETARIAT_REVIEW and r.current_owner_id == user.id) else []
+    else:
+        actions = allowed_actions(user, r.status) if r.current_owner_id == user.id else []
+
+    action_recipients = {a: _eligible_recipients(db, r, a) for a in actions}
+
+    attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    uploader_ids = list({a.uploaded_by_id for a in attachments})
+    uploader_users = {u.id: u for u in db.query(User).filter(User.id.in_(uploader_ids)).all()} if uploader_ids else {}
+    uploader_map = {uid: (uploader_users[uid].full_name or uploader_users[uid].username) for uid in uploader_users}
+
+    links = db.query(ReportSubmission).filter(ReportSubmission.report_id == r.id).all()
+    sub_ids = [l.submission_id for l in links]
+    attached_subs = db.query(Submission).filter(Submission.id.in_(sub_ids)).all() if sub_ids else []
+
+    fids = list({s.form_id for s in attached_subs})
+    forms_map_attached = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+
+    available_subs = []
+    if user.org_id and user.county_id and user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION) and r.current_owner_id == user.id:
+        unit = db.query(OrgCountyUnit).filter(OrgCountyUnit.org_id==user.org_id, OrgCountyUnit.county_id==user.county_id).first()
+        if unit:
+            available_subs = db.query(Submission).filter(Submission.org_county_unit_id==unit.id).order_by(Submission.id.desc()).limit(200).all()
+
+    available_forms = []
+
+    forms_map_available = {}
+    if available_subs:
+        fids2 = list({s.form_id for s in available_subs})
+        forms_map_available = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids2)).all()} if fids2 else {}
+        available_forms = db.query(FormTemplate).filter(FormTemplate.id.in_(fids2)).order_by(FormTemplate.title).all() if fids2 else []
+
+
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/view.html",
+        {
+            "request": request,
+            "report": r,
+            "doc": load_doc(r.content_json),
+            "logs": logs,
+            "actions": actions,
+            "action_recipients": action_recipients,
+            "attached_subs": attached_subs,
+            "forms_map_attached": forms_map_attached,
+            "attachments": attachments,
+            "owner_name": owner_name,
+            "uploader_map": uploader_map,
+            "available_subs": available_subs,
+            "forms_map_available": forms_map_available,
+            "available_forms": available_forms,
+            "user": user,
+            "badge_count": get_badge_count(db, user),
+            "actor_map": actor_map,
+        },
+    )
+
+
+@router.get("/{report_id}/sections/submission-options", response_class=HTMLResponse)
+def submission_options(
+    report_id: int,
+    request: Request,
+    form_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    report = db.get(Report, report_id)
+    require(report is not None, "گزارش یافت نشد", 404)
+    # RBAC guard: can view this report only if scoped to the same org and permitted by role.
+    require(can_view_report(user, report.org_id, report.county_id))
+    # فقط برای همان واحد (org/county) و سطح دسترسی مناسب
+    require(user.org_id == report.org_id and user.county_id == report.county_id, "دسترسی ندارید", 403)
+
+    # Submission ها به جای org_id/county_id، با org_county_unit_id ذخیره می‌شوند.
+    # پس برای همان گزارش، ابتدا واحد متناظر (org/county) را پیدا می‌کنیم و بعد Submission ها را فیلتر می‌کنیم.
+    unit = (
+        db.query(OrgCountyUnit)
+        .filter(OrgCountyUnit.org_id == report.org_id)
+        .filter(OrgCountyUnit.county_id == report.county_id)
+        .first()
+    )
+
+    if unit is None or form_id is None:
+        subs = []
+    else:
+        subs = (
+            db.query(Submission)
+            .filter(Submission.org_county_unit_id == unit.id)
+            .filter(Submission.form_id == form_id)
+            .order_by(Submission.id.desc())
+            .limit(200)
+            .all()
+        )
+
+    # map for label
+    fids = [form_id]
+    forms_map_available = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+
+
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/_submission_options.html",
+        {"request": request, "subs": subs, "forms_map_available": forms_map_available},
+    )
+
+
+@router.get("/{report_id}/pdf")
+def download_pdf(report_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+
+    from app.utils.pdf_report import build_report_pdf
+    from app.db.models.org import Org
+    from app.db.models.county import County
+
+    def _name(u: User | None) -> str | None:
+        return (u.full_name or u.username) if u else None
+
+    def _names_map(ids: list[int]) -> dict[int, str]:
+        if not ids:
+            return {}
+        users = db.query(User).filter(User.id.in_(ids)).all()
+        return {u.id: (u.full_name or u.username) for u in users}
+
+    # compute fresh aggregation without mutating DB
+    doc = load_doc(r.content_json)
+    doc["aggregation"] = aggregate_content(db, r.id)
+
+    attachments = (
+        db.query(ReportAttachment)
+        .filter(ReportAttachment.report_id == r.id)
+        .order_by(ReportAttachment.id.desc())
+        .all()
+    )
+    uploader_map = _names_map(list({a.uploaded_by_id for a in attachments}))
+
+    logs = db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).order_by(WorkflowLog.id.asc()).all()
+    actor_map = _names_map(list({l.actor_id for l in logs}))
+
+    owner_name = _name(db.get(User, r.current_owner_id)) if r.current_owner_id else None
+    created_by_name = _name(db.get(User, r.created_by_id)) if r.created_by_id else None
+
+    org = db.get(Org, r.org_id) if getattr(r, "org_id", None) else None
+    county = db.get(County, r.county_id) if getattr(r, "county_id", None) else None
+    org_name = org.name if org else None
+    county_name = county.name if county else None
+
+    pdf_bytes = build_report_pdf(
+        report=r,
+        doc=doc,
+        attachments=attachments,
+        uploader_map=uploader_map,
+        logs=logs,
+        actor_map=actor_map,
+        owner_name=owner_name,
+        org_name=org_name,
+        county_name=county_name,
+        created_by_name=created_by_name,
+    )
+
+    filename = f"report_{r.id}.pdf"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+@router.post("/{report_id}/attach", response_class=HTMLResponse)
+def attach(
+    request: Request,
+    report_id: int,
+    submission_id: int = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان اتصال وجود ندارد.")
+
+    db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    doc = load_doc(r.content_json)
+    doc["aggregation"] = aggregate_content(db, r.id)
+    doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
+    r.content_json = dump_doc(doc)
+    db.commit()
+
+    attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    uploader_ids = list({a.uploaded_by_id for a in attachments})
+    uploader_users = {u.id: u for u in db.query(User).filter(User.id.in_(uploader_ids)).all()} if uploader_ids else {}
+    uploader_map = {uid: (uploader_users[uid].full_name or uploader_users[uid].username) for uid in uploader_users}
+
+    links = db.query(ReportSubmission).filter(ReportSubmission.report_id == r.id).all()
+    sub_ids = [l.submission_id for l in links]
+    attached_subs = db.query(Submission).filter(Submission.id.in_(sub_ids)).all() if sub_ids else []
+
+    fids = list({s.form_id for s in attached_subs})
+    forms_map_attached = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+
+
+    return request.app.state.templates.TemplateResponse("reports/_attachments.html", {"request": request, "report": r,
+            "doc": load_doc(r.content_json), "attached_subs": attached_subs,
+            "forms_map_attached": forms_map_attached,
+            "attachments": attachments,
+            "owner_name": owner_name,
+            "uploader_map": uploader_map, "user": user})
+
+@router.post("/{report_id}/detach", response_class=HTMLResponse)
+def detach(
+    request: Request,
+    report_id: int,
+    submission_id: int = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف اتصال وجود ندارد.")
+
+    link = db.query(ReportSubmission).filter(ReportSubmission.report_id==r.id, ReportSubmission.submission_id==submission_id).first()
+    if link:
+        db.delete(link)
+        db.commit()
+
+    doc = load_doc(r.content_json)
+    # remove from sections if exists
+    if isinstance(doc.get("sections"), list):
+        doc["sections"] = [s for s in doc["sections"] if s.get("submission_id") != submission_id]
+
+    doc["aggregation"] = aggregate_content(db, r.id)
+    doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
+    r.content_json = dump_doc(doc)
+    db.commit()
+
+    attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    uploader_ids = list({a.uploaded_by_id for a in attachments})
+    uploader_users = {u.id: u for u in db.query(User).filter(User.id.in_(uploader_ids)).all()} if uploader_ids else {}
+    uploader_map = {uid: (uploader_users[uid].full_name or uploader_users[uid].username) for uid in uploader_users}
+
+    links = db.query(ReportSubmission).filter(ReportSubmission.report_id == r.id).all()
+    sub_ids = [l.submission_id for l in links]
+    attached_subs = db.query(Submission).filter(Submission.id.in_(sub_ids)).all() if sub_ids else []
+
+    fids = list({s.form_id for s in attached_subs})
+    forms_map_attached = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+
+
+    return request.app.state.templates.TemplateResponse("reports/_attachments.html", {"request": request, "report": r,
+            "doc": load_doc(r.content_json), "attached_subs": attached_subs,
+            "forms_map_attached": forms_map_attached,
+            "attachments": attachments,
+            "owner_name": owner_name,
+            "uploader_map": uploader_map, "user": user})
+
+
+
+
+@router.get("/{report_id}/attachments/partial", response_class=HTMLResponse)
+def attachments_partial(
+    request: Request,
+    report_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+
+    attachments = (
+        db.query(ReportAttachment)
+        .filter(ReportAttachment.report_id == r.id)
+        .order_by(ReportAttachment.id.desc())
+        .all()
+    )
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    uploader_ids = list({a.uploaded_by_id for a in attachments})
+    uploader_users = (
+        {u.id: u for u in db.query(User).filter(User.id.in_(uploader_ids)).all()} if uploader_ids else {}
+    )
+    uploader_map = {uid: (uploader_users[uid].full_name or uploader_users[uid].username) for uid in uploader_users}
+
+
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/_attachments_files.html",
+        {
+            "request": request,
+            "report": r,
+            "doc": load_doc(r.content_json),
+            "attachments": attachments,
+            "owner_name": owner_name,
+            "uploader_map": uploader_map,
+            "user": user,
+        },
+    )
+
+@router.post("/{report_id}/attachments/delete", response_class=HTMLResponse)
+def delete_attachment(
+    request: Request,
+    report_id: int,
+    attachment_id: int = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف پیوست وجود ندارد.")
+    att = db.get(ReportAttachment, attachment_id)
+    if att and att.report_id == r.id:
+        db.delete(att)
+        db.commit()
+    attachments = db.query(ReportAttachment).filter(ReportAttachment.report_id == r.id).order_by(ReportAttachment.id.desc()).all()
+
+    owner_name = None
+    if r.current_owner_id:
+        ou = db.get(User, r.current_owner_id)
+        owner_name = (ou.full_name or ou.username) if ou else str(r.current_owner_id)
+
+    uploader_ids = list({a.uploaded_by_id for a in attachments})
+    uploader_users = {u.id: u for u in db.query(User).filter(User.id.in_(uploader_ids)).all()} if uploader_ids else {}
+    uploader_map = {uid: (uploader_users[uid].full_name or uploader_users[uid].username) for uid in uploader_users}
+
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/_attachments_files.html",
+        {
+            "request": request,
+            "report": r,
+            "doc": load_doc(r.content_json),
+            "attachments": attachments,
+            "owner_name": owner_name,
+            "uploader_map": uploader_map,
+            "user": user,
+        },
+    )
+@router.post("/{report_id}/update_note")
+def update_note(
+    request: Request,
+    report_id: int,
+    note_html: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش متن وجود ندارد.")
+    # store HTML in note field
+    doc = load_doc(r.content_json)
+    doc["intro_html"] = note_html or ""
+    r.content_json = dump_doc(doc)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/{report_id}/update_conclusion")
+def update_conclusion(
+    request: Request,
+    report_id: int,
+    conclusion_html: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش نتیجه‌گیری وجود ندارد.")
+    doc = load_doc(r.content_json)
+    doc["conclusion_html"] = conclusion_html or ""
+    r.content_json = dump_doc(doc)
+    db.commit()
+    return {"ok": True}
+
+@router.post("/{report_id}/sections/add", response_class=HTMLResponse)
+def add_section(
+    request: Request,
+    report_id: int,
+    submission_id: int = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان افزودن بخش وجود ندارد.")
+    # ensure attached
+    db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    doc = load_doc(r.content_json)
+    # add section if not exists
+    if not any(s.get("submission_id")==submission_id for s in doc.get("sections", [])):
+        doc["sections"].append({"submission_id": submission_id, "description_html": ""})
+    doc["aggregation"] = aggregate_content(db, r.id)
+    r.content_json = dump_doc(doc)
+    db.commit()
+    # rebuild context for partial
+    doc = load_doc(r.content_json)
+
+
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+
+@router.post("/{report_id}/sections/update", response_class=HTMLResponse)
+def update_section_desc(
+    request: Request,
+    report_id: int,
+    submission_id: int = Form(...),
+    description_html: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان ویرایش توضیحات وجود ندارد.")
+    doc = load_doc(r.content_json)
+    for s in doc.get("sections", []):
+        if s.get("submission_id")==submission_id:
+            s["description_html"] = description_html or ""
+            break
+    r.content_json = dump_doc(doc)
+    db.commit()
+    doc = load_doc(r.content_json)
+
+
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+
+
+@router.post("/{report_id}/sections/remove", response_class=HTMLResponse)
+def remove_section(
+    request: Request,
+    report_id: int,
+    submission_id: int = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان حذف بخش وجود ندارد.")
+
+    # delete link (detach)
+    link = db.query(ReportSubmission).filter(ReportSubmission.report_id==r.id, ReportSubmission.submission_id==submission_id).first()
+    if link:
+        db.delete(link)
+        db.commit()
+
+    doc = load_doc(r.content_json)
+    if isinstance(doc.get("sections"), list):
+        doc["sections"] = [s for s in doc["sections"] if s.get("submission_id") != submission_id]
+    doc["aggregation"] = aggregate_content(db, r.id)
+    doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
+    r.content_json = dump_doc(doc)
+    db.commit()
+
+    doc = load_doc(r.content_json)
+
+
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+
+@router.post("/{report_id}/sections/reorder", response_class=HTMLResponse)
+def reorder_sections(
+    request: Request,
+    report_id: int,
+    order: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان تغییر ترتیب وجود ندارد.")
+
+    ids = []
+    for part in (order or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    ids = list(dict.fromkeys(ids))
+
+    doc = load_doc(r.content_json)
+    sections = doc.get("sections") if isinstance(doc.get("sections"), list) else []
+    sec_map = {s.get("submission_id"): s for s in sections if isinstance(s, dict) and s.get("submission_id") is not None}
+
+    new_sections = []
+    for sid in ids:
+        if sid in sec_map:
+            new_sections.append(sec_map[sid])
+    # append any remaining (keeps data)
+    for s in sections:
+        sid = s.get("submission_id") if isinstance(s, dict) else None
+        if sid and sid not in ids:
+            new_sections.append(s)
+
+    doc["sections"] = new_sections
+    r.content_json = dump_doc(doc)
+    db.commit()
+
+    doc = load_doc(r.content_json)
+
+
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+
+@router.post("/{report_id}/upload")
+async def upload_file(
+    request: Request,
+    report_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    from fastapi import UploadFile
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(r.current_owner_id == user.id and r.status in (ReportStatus.DRAFT, ReportStatus.NEEDS_REVISION), "در این وضعیت امکان آپلود وجود ندارد.")
+
+    form = await request.form()
+    up = form.get("file")
+    require(up is not None, "فایل ارسال نشد", 400)
+
+    if isinstance(up, UploadFile) and up.filename:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        ext = os.path.splitext(up.filename)[1]
+        fname = f"report_{report_id}_{uuid.uuid4().hex}{ext}"
+        dest = os.path.join(UPLOAD_DIR, fname)
+        max_bytes = int(settings.MAX_UPLOAD_MB) * 1024 * 1024
+        size = 0
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await up.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_bytes:
+                    try:
+                        out.close()
+                        os.remove(dest)
+                    except Exception:
+                        pass
+                    require(False, f"فایل معتبر نیست (حداکثر {settings.MAX_UPLOAD_MB}MB).", 400)
+                out.write(chunk)
+        url = f"/uploads/{fname}"
+        att = ReportAttachment(report_id=r.id, uploaded_by_id=user.id, filename=up.filename, url=url)
+        db.add(att)
+        db.commit()
+        return {"url": url, "name": up.filename, "id": att.id}
+    require(False, "فایل معتبر نیست", 400)
+
+@router.post("/{report_id}/action", response_class=HTMLResponse)
+def do_action(
+    request: Request,
+    report_id: int,
+    action: str = Form(...),
+    recipient_id: str = Form(""),
+    comment: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id))
+
+    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
+    if user.role == Role.ORG_PROV_EXPERT:
+        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
+    if user.role == Role.ORG_COUNTY_EXPERT:
+        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
+    require(_can_act(user, r, action), "این اقدام برای شما/این وضعیت مجاز نیست")
+
+    recipients = _eligible_recipients(db, r, action)
+    rid = int(recipient_id) if recipient_id.strip().isdigit() else None
+
+    if action != "final_approve":
+        require(recipients, "برای این اقدام گیرنده‌ای وجود ندارد.", 400)
+        if rid is None:
+            rid = recipients[0].id
+        require(any(u.id == rid for u in recipients), "گیرنده انتخاب‌شده معتبر نیست.", 400)
+
+    from_status = r.status
+    to_status = transition(r.status, action)
+
+    r.status = to_status
+    if action == "final_approve":
+        r.current_owner_id = None
+    else:
+        r.current_owner_id = rid
+
+    db.add(WorkflowLog(
+        report_id=r.id,
+        actor_id=user.id,
+        from_status=from_status.value,
+        to_status=to_status.value,
+        action=action,
+        comment=comment or "",
+    ))
+
+    # Update aggregation
+    doc = load_doc(r.content_json)
+    doc["aggregation"] = aggregate_content(db, r.id)
+    doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
+    r.content_json = dump_doc(doc)
+
+    # Notifications (Unread -> badge)
+    if action == "final_approve":
+        notify(db, r.created_by_id, f"گزارش #{r.id} تأیید نهایی شد.", report_id=r.id, type="final")
+    else:
+        action_fa = {
+            "submit_for_review": "ارسال برای بررسی",
+            "approve": "ارسال مرحله بعد",
+            "request_revision": "نیاز به اصلاح",
+        }.get(action, action)
+        notify(db, rid, f"گزارش #{r.id} برای شما ارسال شد ({action_fa}).", report_id=r.id, type="report")
+        if action == "request_revision":
+            # also notify actor (optional)
+            notify(
+                db,
+                user.id,
+                f"برای گزارش #{r.id} نیاز به اصلاح اعلام شد و برای اصلاح برگشت داده شد.",
+                report_id=r.id,
+                type="info",
+            )
+
+    db.commit()
+
+    # Refresh actions box after transition
+    if user.role in (Role.SECRETARIAT_ADMIN, Role.SECRETARIAT_USER):
+        actions2 = ["final_approve", "request_revision"] if (r.status == ReportStatus.SECRETARIAT_REVIEW and r.current_owner_id == user.id) else []
+    else:
+        actions2 = allowed_actions(user, r.status) if r.current_owner_id == user.id else []
+    action_recipients2 = {a: _eligible_recipients(db, r, a) for a in actions2}
+
+
+
+    return request.app.state.templates.TemplateResponse(
+        "reports/_actions.html",
+        {"request": request, "report": r,
+            "doc": load_doc(r.content_json), "actions": actions2, "action_recipients": action_recipients2, "user": user},
+    )

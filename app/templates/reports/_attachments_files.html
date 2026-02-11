@@ -1,0 +1,27 @@
+<h5 class="mb-3">پیوست‌های گزارش</h5>
+
+{% if attachments and attachments|length>0 %}
+  <div class="list-group">
+    {% for a in attachments %}
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <div class="d-flex flex-column">
+          <div class="d-flex gap-2 align-items-center">
+            <b>{{ a.filename }}</b>
+            <span class="badge text-bg-secondary">#{{ a.id }}</span>
+          </div>
+          <a class="small mt-1" href="{{ a.url }}" target="_blank">دانلود/مشاهده</a>
+          <div class="text-muted small mt-1">آپلود توسط: {{ uploader_map.get(a.uploaded_by_id, a.uploaded_by_id) }} | {{ a.created_at }}</div>
+        </div>
+
+        {% if report.status.value in ["draft","needs_revision"] and report.current_owner_id == user.id %}
+          <form hx-post="/reports/{{ report.id }}/attachments/delete" hx-target="#fileAttachmentsBox" hx-swap="innerHTML" class="m-0">
+            <input type="hidden" name="attachment_id" value="{{ a.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="text-muted">پیوستی ثبت نشده است.</div>
+{% endif %}

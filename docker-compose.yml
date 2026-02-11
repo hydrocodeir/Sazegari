@@ -1,0 +1,60 @@
+services:
+  migrate:
+    build: .
+    container_name: water_compat_migrate
+    env_file:
+      - .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "app.scripts.migrate"]
+    restart: "no"
+
+  web:
+    build: .
+    container_name: water_compat_web
+    env_file:
+      - .env.docker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./pip.conf:/etc/pip.conf:ro
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    container_name: water_compat_db
+    environment:
+      MYSQL_DATABASE: water_compat
+      MYSQL_USER: water
+      MYSQL_PASSWORD: waterpass
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3306:3306"
+    command: ["--default-authentication-plugin=mysql_native_password", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -prootpass --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: water_compat_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  db_data:

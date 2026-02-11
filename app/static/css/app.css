@@ -1,0 +1,129 @@
+:root{
+  --brand: #0b5ed7;           /* رنگ سازمان - می‌تونی عوضش کنی */
+  --brand-2: #0a58ca;
+  --sidebar-bg: #0b1220;
+  --sidebar-border: rgba(255,255,255,.08);
+  --sidebar-text: rgba(255,255,255,.85);
+  --sidebar-muted: rgba(255,255,255,.55);
+  --card-radius: 1.25rem;
+}
+
+pre { white-space: pre-wrap; word-break: break-word; }
+.card { border-radius: var(--card-radius); }
+.rounded-4 { border-radius: var(--card-radius) !important; }
+.table thead th { white-space: nowrap; }
+
+/* Shell */
+.app-shell{
+  display:flex;
+  min-height:100vh;
+}
+
+/* Sidebar */
+.app-sidebar{
+  width: 280px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  border-left: 1px solid var(--sidebar-border);
+  display:flex;
+  flex-direction:column;
+  padding: 14px 12px;
+}
+
+.sidebar-brand{
+  padding: 10px 10px 14px 10px;
+  border-bottom: 1px solid var(--sidebar-border);
+  margin-bottom: 10px;
+}
+
+.sidebar-section{
+  padding: 8px;
+}
+.sidebar-caption{
+  color: var(--sidebar-muted);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  margin: 8px 6px 10px 6px;
+}
+
+.sidebar-link{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px 12px;
+  margin: 4px 2px;
+  border-radius: 12px;
+  color: var(--sidebar-text);
+  text-decoration:none;
+  transition: background .15s ease, transform .15s ease;
+}
+.sidebar-link i{ font-size: 1.1rem; opacity:.9; }
+.sidebar-link:hover{
+  background: rgba(255,255,255,.06);
+  transform: translateY(-1px);
+}
+.sidebar-link.active{
+  background: rgba(13,110,253,.18);
+  outline: 1px solid rgba(13,110,253,.25);
+}
+
+.sidebar-footer{
+  padding: 12px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+/* Main */
+.app-main{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+.app-topbar{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  position: sticky;
+  top:0;
+  z-index: 10;
+}
+
+.topbar-title{
+  font-weight: 700;
+}
+
+.topbar-chip{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.08);
+  background: rgba(13,110,253,.06);
+}
+
+.app-footer{
+  padding: 14px 0;
+}
+
+/* Responsive */
+@media (max-width: 991.98px){
+  .app-sidebar{ display:none; }
+}
+
+
+/* Global Loading Overlay */
+.global-loading{
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,0.55);
+  z-index: 1998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.global-loading.show{ display:flex; }

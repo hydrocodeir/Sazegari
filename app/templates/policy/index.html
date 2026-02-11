@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block page_title %}Policy Matrix{% endblock %}
+{% block content %}
+<div class="card p-3 border-0 shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div>
+      <h5 class="m-0">Policy Matrix</h5>
+      <div class="text-muted small">این صفحه برای مستندسازی و تست سطح دسترسی‌هاست.</div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th>نقش</th>
+          <th>فرم‌ها</th>
+          <th>مشاهده گزارش</th>
+          <th>ایجاد گزارش</th>
+          <th>گردش‌کار</th>
+          <th>اعلان‌ها</th>
+          <th>مدیریت</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><b>{{ r.role }}</b><div class="text-muted small">{{ r.code }}</div></td>
+            <td>{{ r.forms }}</td>
+            <td>{{ r.reports_view }}</td>
+            <td>{{ r.reports_create }}</td>
+            <td>{{ r.workflow }}</td>
+            <td>{{ r.notifications }}</td>
+            <td>{{ r.admin }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

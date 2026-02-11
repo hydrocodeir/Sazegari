@@ -1,0 +1,81 @@
+{# Sections builder and display (tables for each selected form/submission) #}
+
+{% set agg = doc.aggregation %}
+{% set subs = agg.submissions or [] %}
+{% set forms_meta = agg.forms or {} %}
+
+<div id="sectionsContainer">
+{% if doc.sections and doc.sections|length>0 %}
+  {% for sec in doc.sections %}
+    {% set sid = sec.submission_id %}
+    {% set sub = (subs | selectattr("id","equalto", sid) | list | first) %}
+    {% if sub %}
+      {% set fmeta = forms_meta.get(sub.form_id|string, {}) %}
+      <div class="card p-3 border-0 shadow-sm mb-3" data-sid="{{ sub.id }}">
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            {% if can_edit %}
+              <span class="drag-handle text-muted" style="cursor:grab" title="جابجایی">
+                <i class="bi bi-grip-vertical"></i>
+              </span>
+            {% endif %}
+            <div>
+              <div class="h6 m-0">{{ fmeta.title or sub.form_title }}</div>
+              <div class="text-muted small">Submission #{{ sub.id }}</div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 align-items-center">
+            <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ sub.id }}">مشاهده ثبت</a>
+            {% if can_edit %}
+              <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeSection({{ sub.id }})">حذف</button>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if can_edit %}
+          <hr>
+          <div class="small text-muted mb-2">توضیحات این بخش</div>
+          <div id="secEditor_{{ sub.id }}" class="border rounded-3"></div>
+          <input type="hidden" id="secHtml_{{ sub.id }}" value="{{ sec.description_html | e }}">
+          <div class="mt-2">
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})">ذخیره توضیحات</button>
+          </div>
+        {% else %}
+          {% if sec.description_html %}
+            <hr>
+            <div class="small text-muted">توضیحات</div>
+            <div class="mt-2">{{ sec.description_html | safe }}</div>
+          {% endif %}
+        {% endif %}
+
+        <hr>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
+            <tbody>
+              {% for k,v in (sub.payload or {}).items() %}
+                {% set label = (fmeta.labels.get(k) if fmeta.labels else k) %}
+                <tr>
+                  <td class="text-muted small">{{ label }}</td>
+                  <td>
+                    {% if v is mapping and v.path %}
+                      <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
+                    {% elif v is sequence and (v is not string) %}
+                      {{ v|join(", ") }}
+                    {% else %}
+                      {{ v }}
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+{% else %}
+  <div class="text-muted">هنوز هیچ فرم/بخشی به گزارش اضافه نشده است.</div>
+{% endif %}
+</div>

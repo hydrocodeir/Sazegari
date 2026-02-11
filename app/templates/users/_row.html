@@ -1,0 +1,12 @@
+<tr id="user-{{ u.id }}">
+  <td>{{ u.id }}</td>
+  <td>{{ u.full_name }}</td>
+  <td>{{ u.username }}</td>
+  <td>{{ u.role.value }}</td>
+  <td>{{ u.org_id or "" }}</td>
+  <td>{{ u.county_id or "" }}</td>
+  <td>
+    <a class="btn" href="/users/{{ u.id }}/edit">ویرایش</a>
+    <button hx-delete="/users/{{ u.id }}" hx-target="#user-{{ u.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
+  </td>
+</tr>

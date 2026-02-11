@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block page_title %}ورود{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7 col-lg-4">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="text-center mb-3">
+        <img src="/static/img/logo.svg" alt="Logo" height="48" class="mb-2">
+        <div class="fw-bold">سامانه سازگاری با کم‌آبی</div>
+        <div class="text-muted small">ورود کاربران سازمانی</div>
+      </div>
+
+      {% if error %}
+        <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/login" class="vstack gap-2">
+        <div>
+          <label class="form-label small">نام کاربری</label>
+          <input name="username" class="form-control" placeholder="مثلاً: ali" required autofocus>
+        </div>
+
+        <div>
+          <label class="form-label small">رمز عبور</label>
+          <input name="password" type="password" class="form-control" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 mt-2">
+          ورود
+        </button>
+      </form>
+
+      <div class="text-muted small mt-3">
+        برای ورود اولیه (در حالت توسعه): <span class="badge text-bg-secondary">admin / admin123</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

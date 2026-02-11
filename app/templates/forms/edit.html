@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="mb-3">ویرایش فرم</h1>
+
+<div class="card p-3">
+  <form method="post" action="/forms/{{ form.id }}/edit">
+    <div class="row g-2">
+      <div class="col-md-4">
+        <label class="form-label">ارگان</label>
+        <select name="org_id" class="form-select" required>
+          {% for o in orgs %}
+            <option value="{{ o.id }}" {% if o.id==form.org_id %}selected{% endif %}>{{ o.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">شهرستان (اختیاری)</label>
+        <select name="county_id" class="form-select">
+          <option value="" {% if not form.county_id %}selected{% endif %}>همه شهرستان‌ها</option>
+          {% for c in counties %}
+            <option value="{{ c.id }}" {% if form.county_id==c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">عنوان فرم</label>
+        <input name="title" class="form-control" value="{{ form.title }}" required />
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="border rounded-3 p-3 mb-2 bg-light" id="formBuilder">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <b>فرم‌ساز گرافیکی</b>
+          <div class="text-muted small">فیلدها را اضافه/حذف/ویرایش کن.</div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addFieldRow()">+ افزودن فیلد</button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="min-width:150px">کلید (English)</th>
+              <th style="min-width:160px">برچسب</th>
+              <th style="min-width:120px">نوع</th>
+              <th style="min-width:70px">الزامی</th>
+              <th style="min-width:160px">regex</th>
+              <th style="min-width:220px">options</th>
+              <th style="width:80px"></th>
+            </tr>
+          </thead>
+          <tbody id="fieldsBody"></tbody>
+        </table>
+      </div>
+      <div class="text-muted small mt-2">
+        options را با کاما جدا کن (مثلاً: <code>کم,متوسط,زیاد</code>)
+      </div>
+    </div>
+
+    <input type="hidden" name="schema_text" id="schema_text" value="{}"/>
+
+    <details class="mt-2">
+      <summary class="small text-muted">نمایش/ویرایش JSON (اختیاری)</summary>
+      <textarea id="schema_text_preview" rows="10" class="form-control mt-2">{{ form.schema_json }}</textarea>
+      <div class="small text-muted mt-1">اگر اینجا را تغییر بدهی، هنگام ذخیره همین مقدار ثبت می‌شود.</div>
+    </details>
+
+    <div class="mt-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary">ذخیره تغییرات</button>
+      <a href="/forms" class="btn btn-outline-secondary">بازگشت</a>
+    </div>
+  </form>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", ()=>{
+  // Prefill builder from existing JSON
+  let raw = document.getElementById("schema_text_preview").value || "{}";
+  let obj = null;
+  try{ obj = JSON.parse(raw); } catch(e){ obj = null; }
+  const fields = (obj && Array.isArray(obj.fields)) ? obj.fields : [];
+  const tbody = document.getElementById("fieldsBody");
+  if(!tbody) return;
+  tbody.innerHTML = "";
+  if(fields.length){
+    fields.forEach(f=>addFieldRow(f));
+  } else {
+    addFieldRow({name:"year", label:"سال", type:"number", required:true});
+  }
+  // syncSchemaFromBuilder will set hidden input
+  syncSchemaFromBuilder();
+});
+</script>
+{% endblock %}
