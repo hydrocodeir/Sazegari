@@ -112,6 +112,12 @@ def edit_save(
     db.commit()
     return RedirectResponse("/forms", status_code=303)
 
+
+@router.post("/{form_id}/delete", response_class=HTMLResponse)
+def delete_post(request: Request, form_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    # Alias for README compatibility
+    return delete(request, form_id, db, user)
+
 @router.delete("/{form_id}", response_class=HTMLResponse)
 def delete(request: Request, form_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     require(can_create_form(user))

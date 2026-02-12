@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import String, Integer, Enum, ForeignKey
+from sqlalchemy import String, Integer, Enum, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -28,6 +28,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(120))
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default='1', index=True)
 
     role: Mapped[Role] = mapped_column(Enum(Role), index=True)
 

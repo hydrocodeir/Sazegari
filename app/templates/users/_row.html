@@ -6,7 +6,27 @@
   <td>{{ u.org_id or "" }}</td>
   <td>{{ u.county_id or "" }}</td>
   <td>
-    <a class="btn" href="/users/{{ u.id }}/edit">ویرایش</a>
-    <button hx-delete="/users/{{ u.id }}" hx-target="#user-{{ u.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
+    {% if u.is_active %}
+      <span class="badge text-bg-success">فعال</span>
+    {% else %}
+      <span class="badge text-bg-secondary">غیرفعال</span>
+    {% endif %}
+  </td>
+  <td class="text-end">
+    <a class="btn btn-sm btn-outline-secondary" href="/users/{{ u.id }}/edit">ویرایش</a>
+    <button class="btn btn-sm btn-outline-warning"
+            hx-post="/users/{{ u.id }}/toggle-active"
+            hx-target="#user-{{ u.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="وضعیت این کاربر تغییر کند؟">
+      فعال/غیرفعال
+    </button>
+    <button class="btn btn-sm btn-outline-danger"
+            hx-delete="/users/{{ u.id }}"
+            hx-target="#user-{{ u.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="حذف شود؟">
+      حذف
+    </button>
   </td>
 </tr>

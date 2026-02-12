@@ -178,3 +178,24 @@ def delete(request: Request, user_id: int, db: Session = Depends(get_db), user=D
         db.delete(u)
         db.commit()
     return HTMLResponse("")
+
+
+@router.post("/{user_id}/toggle-active", response_class=HTMLResponse)
+def toggle_active(request: Request, user_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    # Only secretariat_admin (masterdata.manage in policy) can manage users
+    require(can_manage_masterdata(user))
+    u = db.get(User, user_id)
+    require(u is not None, "کاربر یافت نشد", 404)
+    # do not allow disabling yourself (optional safety)
+    if u.id == user.id:
+        return request.app.state.templates.TemplateResponse(
+            "users/_row_error.html",
+            {"request": request, "error": "امکان غیرفعال‌کردن حساب خودتان وجود ندارد."},
+            status_code=400,
+        )
+    # toggle
+    if hasattr(u, "is_active"):
+        u.is_active = not bool(u.is_active)
+    db.commit()
+    db.refresh(u)
+    return request.app.state.templates.TemplateResponse("users/_row.html", {"request": request, "u": u})

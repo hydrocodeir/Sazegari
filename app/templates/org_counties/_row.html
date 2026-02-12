@@ -2,7 +2,11 @@
   <td>{{ unit.id }}</td>
   <td>{{ unit.org.name }}</td>
   <td>{{ unit.county.name }}</td>
-  <td>
-    <button hx-delete="/org-counties/{{ unit.id }}" hx-target="#unit-{{ unit.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
+  <td class="text-end">
+    <button class="btn btn-sm btn-outline-danger"
+            hx-delete="/org-counties/{{ unit.id }}"
+            hx-target="#unit-{{ unit.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="حذف شود؟">حذف</button>
   </td>
 </tr>

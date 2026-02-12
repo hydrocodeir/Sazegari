@@ -60,6 +60,15 @@ def _wants_html(request: Request) -> bool:
 
 
 templates = Jinja2Templates(directory="app/templates")
+from app.core.rbac import has_perm, Perm, can_manage_masterdata, can_view_forms, can_create_report, can_submit_data
+
+# Make RBAC helpers available in templates
+templates.env.globals['has_perm'] = has_perm
+templates.env.globals['Perm'] = Perm
+templates.env.globals['can_manage_masterdata'] = can_manage_masterdata
+templates.env.globals['can_view_forms'] = can_view_forms
+templates.env.globals['can_create_report'] = can_create_report
+templates.env.globals['can_submit_data'] = can_submit_data
 
 app = FastAPI(title=settings.APP_NAME)
 app.state.templates = templates

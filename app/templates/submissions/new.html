@@ -10,6 +10,19 @@
   <input type="hidden" name="form_id" value="{{ form.id }}">
   <input type="hidden" name="payload_json" id="payload_json" value="{}">
 
+  {% if counties_for_select and counties_for_select|length > 0 %}
+    <div class="col-12">
+      <label class="form-label">شهرستان</label>
+      <select class="form-select" name="county_id" required>
+        <option value="">-- انتخاب شهرستان --</option>
+        {% for c in counties_for_select %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">برای نقش کارشناس استان، انتخاب شهرستان الزامی است.</div>
+    </div>
+  {% endif %}
+
   <div class="row g-3">
     {% for f in (schema.fields or []) %}
       <div class="col-md-6">

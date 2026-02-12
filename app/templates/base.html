@@ -30,14 +30,18 @@
         <a class="sidebar-link {% if request.url.path=='/' %}active{% endif %}" href="/">
           <i class="bi bi-speedometer2"></i><span>داشبورد</span>
         </a>
+        {% if user and can_submit_data(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/submissions') %}active{% endif %}" href="/submissions">
           <i class="bi bi-ui-checks-grid"></i><span>ثبت داده</span>
         </a>
+        {% endif %}
+        {% if user %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}" href="/reports">
           <i class="bi bi-file-earmark-text"></i><span>گزارش‌ها</span>
         </a>
+        {% endif %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/notifications') %}active{% endif %}" href="/notifications">
           <i class="bi bi-bell"></i><span>اعلان‌ها</span>
@@ -50,30 +54,42 @@
       {% if user and user.role and user.role.value.startswith("secretariat") %}
       <div class="sidebar-section mt-2">
         <div class="sidebar-caption">مدیریت</div>
+        {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/orgs') %}active{% endif %}" href="/orgs">
           <i class="bi bi-diagram-3"></i><span>ارگان‌ها</span>
         </a>
+        {% endif %}
+        {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/counties') %}active{% endif %}" href="/counties">
           <i class="bi bi-geo-alt"></i><span>شهرستان‌ها</span>
         </a>
+        {% endif %}
+        {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/org-counties') %}active{% endif %}" href="/org-counties">
           <i class="bi bi-link-45deg"></i><span>ارگان↔شهرستان</span>
         </a>
+        {% endif %}
+        {% if user and can_view_forms(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/forms') %}active{% endif %}" href="/forms">
           <i class="bi bi-card-checklist"></i><span>فرم‌ها</span>
         </a>
+        {% endif %}
+        {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/policy') %}active{% endif %}" href="/policy">
           <i class="bi bi-shield-lock"></i><span>Policy Matrix</span>
         </a>
+        {% endif %}
+        {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/users') %}active{% endif %}" href="/users">
           <i class="bi bi-people"></i><span>کاربران</span>
         </a>
+        {% endif %}
       </div>
       {% endif %}
 

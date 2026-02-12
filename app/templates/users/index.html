@@ -1,59 +1,73 @@
 {% extends "base.html" %}
+{% block page_title %}کاربران{% endblock %}
 {% block content %}
-<h1>کاربران</h1>
 
-<div class="card">
-  <h3>ایجاد کاربر جدید</h3>
-  <form hx-post="/users" hx-target="#users-tbody" hx-swap="afterbegin" id="createUserForm">
-    <label>نام و نام خانوادگی</label>
-    <input name="full_name" required>
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card p-3 border-0 shadow-sm">
+      <h5 class="mb-2">ایجاد کاربر جدید</h5>
+      <form hx-post="/users" hx-target="#users-tbody" hx-swap="afterbegin" class="vstack gap-2" id="createUserForm">
+        <input class="form-control" name="full_name" placeholder="نام کامل" required>
+        <input class="form-control" name="username" placeholder="نام کاربری" required>
+        <input class="form-control" name="password" placeholder="رمز عبور" type="password" required>
 
-    <label>نام کاربری</label>
-    <input name="username" required>
+        <select class="form-select" name="role" required>
+          <option value="">-- نقش --</option>
+          {% for r in roles %}
+            <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
 
-    <label>رمز عبور</label>
-    <input name="password" type="password" required>
+        <select class="form-select" name="org_id">
+          <option value="">-- ارگان (اختیاری/وابسته به نقش) --</option>
+          {% for o in orgs %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+          {% endfor %}
+        </select>
 
-    <label>نقش</label>
-    <select name="role" required>
-      {% for r in roles %}
-        <option value="{{ r }}">{{ r }}</option>
-      {% endfor %}
-    </select>
+        <select class="form-select" name="county_id">
+          <option value="">-- شهرستان (اختیاری/وابسته به نقش) --</option>
+          {% for c in counties %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
 
-    <label>ارگان (برای نقش‌های استانی/شهرستانی)</label>
-    <select name="org_id">
-      <option value="">--</option>
-      {% for o in orgs %}
-        <option value="{{ o.id }}">{{ o.name }}</option>
-      {% endfor %}
-    </select>
+        <button class="btn btn-primary" type="submit">ایجاد</button>
+      </form>
+      <div class="small text-muted mt-2">مدیریت کاربران فقط برای مدیر دبیرخانه فعال است.</div>
+    </div>
+  </div>
 
-    <label>شهرستان (برای نقش‌های شهرستانی)</label>
-    <select name="county_id">
-      <option value="">--</option>
-      {% for c in counties %}
-        <option value="{{ c.id }}">{{ c.name }}</option>
-      {% endfor %}
-    </select>
+  <div class="col-lg-8">
+    <div class="card p-3 border-0 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="m-0">لیست کاربران</h5>
+        <span class="text-muted small">{{ users|length }} مورد</span>
+      </div>
 
-    <button type="submit">ایجاد</button>
-    <p class="muted">نکته: برای نقش‌های شهرستانی حتماً ارگان+شهرستان را تعیین کنید؛ برای نقش‌های استانی فقط ارگان.</p>
-  </form>
-
-  <div id="user-create-error"></div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>نام</th>
+              <th>نام کاربری</th>
+              <th>نقش</th>
+              <th>Org</th>
+              <th>County</th>
+              <th>وضعیت</th>
+              <th class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+            {% for u in users %}
+              {% include "users/_row.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>#</th><th>نام</th><th>نام کاربری</th><th>نقش</th><th>org_id</th><th>county_id</th><th></th>
-    </tr>
-  </thead>
-  <tbody id="users-tbody">
-    {% for u in users %}
-      {% include "users/_row.html" %}
-    {% endfor %}
-  </tbody>
-</table>
 {% endblock %}

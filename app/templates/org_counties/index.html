@@ -1,34 +1,46 @@
 {% extends "base.html" %}
+{% block page_title %}واحد ارگان↔شهرستان{% endblock %}
 {% block content %}
-<h1>اتصال ارگان ↔ شهرستان (واحد شهرستانی ارگان)</h1>
+<div class="card p-3 border-0 shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="m-0">واحد ارگان↔شهرستان</h5>
+    <span class="text-muted small">{{ units|length }} مورد</span>
+  </div>
 
-<div class="card">
-  <form hx-post="/org-counties" hx-target="#units-tbody" hx-swap="afterbegin">
-    <label>ارگان</label>
-    <select name="org_id" required>
-      {% for o in orgs %}
-        <option value="{{ o.id }}">{{ o.name }}</option>
-      {% endfor %}
-    </select>
-
-    <label>شهرستان</label>
-    <select name="county_id" required>
-      {% for c in counties %}
-        <option value="{{ c.id }}">{{ c.name }}</option>
-      {% endfor %}
-    </select>
-
-    <button type="submit">ایجاد اتصال</button>
+  <form hx-post="/org-counties" hx-target="#units-tbody" hx-swap="afterbegin" class="row g-2 mb-3">
+    <div class="col-md-4">
+      <select class="form-select" name="org_id" required>
+        <option value="">-- ارگان --</option>
+        {% for o in orgs %}
+          <option value="{{ o.id }}">{{ o.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <select class="form-select" name="county_id" required>
+        <option value="">-- شهرستان --</option>
+        {% for c in counties %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary w-100" type="submit">افزودن</button>
+    </div>
   </form>
-  <p class="muted">دسترسی: فقط مدیر دبیرخانه</p>
-</div>
 
-<table>
-  <thead><tr><th>#</th><th>ارگان</th><th>شهرستان</th><th></th></tr></thead>
-  <tbody id="units-tbody">
-    {% for unit in units %}
-      {% include "org_counties/_row.html" %}
-    {% endfor %}
-  </tbody>
-</table>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr><th>#</th><th>ارگان</th><th>شهرستان</th><th class="text-end"></th></tr>
+      </thead>
+      <tbody id="units-tbody">
+        {% for u in units %}
+          {% set unit = u %}
+          {% include "org_counties/_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

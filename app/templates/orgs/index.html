@@ -1,21 +1,32 @@
 {% extends "base.html" %}
+{% block page_title %}ارگان‌ها{% endblock %}
 {% block content %}
-<h1>ارگان‌ها</h1>
+<div class="card p-3 border-0 shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="m-0">ارگان‌ها</h5>
+    <span class="text-muted small">{{ orgs|length }} مورد</span>
+  </div>
 
-<div class="card">
-  <form hx-post="/orgs" hx-target="#orgs-tbody" hx-swap="afterbegin">
-    <input name="name" placeholder="نام ارگان" required />
-    <button type="submit">افزودن</button>
+  <form hx-post="/orgs" hx-target="#orgs-tbody" hx-swap="afterbegin" class="row g-2 mb-3">
+    <div class="col-md-6">
+      <input class="form-control" name="name" placeholder="نام ارگان" required>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary w-100" type="submit">افزودن</button>
+    </div>
   </form>
-  <p class="muted">دسترسی: فقط مدیر دبیرخانه</p>
-</div>
 
-<table>
-  <thead><tr><th>#</th><th>نام</th><th></th></tr></thead>
-  <tbody id="orgs-tbody">
-    {% for org in orgs %}
-      {% include "orgs/_row.html" %}
-    {% endfor %}
-  </tbody>
-</table>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr><th>#</th><th>نام</th><th class="text-end"></th></tr>
+      </thead>
+      <tbody id="orgs-tbody">
+        {% for org in orgs %}
+          {% include "orgs/_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

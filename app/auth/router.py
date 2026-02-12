@@ -35,6 +35,13 @@ def login(
             status_code=400,
         )
 
+    if hasattr(user, 'is_active') and not user.is_active:
+        return request.app.state.templates.TemplateResponse(
+            "auth/login.html",
+            {"request": request, "error": "این حساب کاربری غیرفعال است.", "badge_count": 0},
+            status_code=403,
+        )
+
     sid = sign_session({"user_id": user.id})
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(

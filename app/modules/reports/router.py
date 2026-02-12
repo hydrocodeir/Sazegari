@@ -292,12 +292,6 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-
     logs = db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).order_by(WorkflowLog.id.desc()).all()
 
     audit_logs = (
@@ -385,12 +379,6 @@ def permissions(report_id: int, db: Session = Depends(get_db), user=Depends(get_
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
 
     # What actions exist for this state, and which of them are allowed for this user
     state_actions = list(allowed_actions_for_status(r.kind, r.status))
@@ -518,12 +506,6 @@ def download_pdf(report_id: int, db: Session = Depends(get_db), user=Depends(get
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-
     from app.utils.pdf_report import build_report_pdf
     from app.db.models.org import Org
     from app.db.models.county import County
@@ -588,12 +570,6 @@ def attach(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_edit(user, r), "در این وضعیت امکان اتصال وجود ندارد.")
 
     db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
@@ -647,12 +623,6 @@ def detach(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_edit(user, r), "در این وضعیت امکان حذف اتصال وجود ندارد.")
 
     link = db.query(ReportSubmission).filter(ReportSubmission.report_id==r.id, ReportSubmission.submission_id==submission_id).first()
@@ -714,12 +684,6 @@ def attachments_partial(
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
 
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
-
     attachments = (
         db.query(ReportAttachment)
         .filter(ReportAttachment.report_id == r.id)
@@ -764,12 +728,6 @@ def delete_attachment(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_edit(user, r), "در این وضعیت امکان حذف پیوست وجود ندارد.")
     att = db.get(ReportAttachment, attachment_id)
     if att and att.report_id == r.id:
@@ -823,12 +781,6 @@ def update_note(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_edit(user, r), "در این وضعیت امکان ویرایش متن وجود ندارد.")
     before = load_doc(r.content_json)
     # store HTML in intro field
@@ -1014,12 +966,6 @@ async def upload_file(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_edit(user, r), "در این وضعیت امکان آپلود وجود ندارد.")
 
     form = await request.form()
@@ -1069,12 +1015,6 @@ def do_action(
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
-
-    # Expert scope: کارشناسان فقط گزارش‌های خودشان/ارجاع‌شده را ببینند
-    if user.role == Role.ORG_PROV_EXPERT:
-        require(r.current_owner_id == user.id, "این گزارش در صف شما نیست", 403)
-    if user.role == Role.ORG_COUNTY_EXPERT:
-        require((r.created_by_id == user.id) or (r.current_owner_id == user.id), "این گزارش متعلق به شما نیست", 403)
     require(_can_act(user, r, action), "این اقدام برای شما/این وضعیت مجاز نیست")
 
     recipients = _eligible_recipients(db, r, action)

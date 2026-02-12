@@ -1,46 +1,41 @@
 {% extends "base.html" %}
+{% block page_title %}ویرایش کاربر{% endblock %}
 {% block content %}
-<h1>ویرایش کاربر #{{ u.id }}</h1>
+<div class="card p-3 border-0 shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="m-0">ویرایش کاربر #{{ u.id }}</h5>
+    <a class="btn btn-sm btn-outline-secondary" href="/users">بازگشت</a>
+  </div>
 
-{% if error %}
-  <div class="alert">{{ error }}</div>
-{% endif %}
+  <form method="post" action="/users/{{ u.id }}/edit" class="vstack gap-2" style="max-width: 520px;">
+    <input class="form-control" name="full_name" value="{{ u.full_name }}" required>
+    <input class="form-control" name="username" value="{{ u.username }}" required>
 
-<form method="post" action="/users/{{ u.id }}/edit" class="card">
-  <label>نام و نام خانوادگی</label>
-  <input name="full_name" value="{{ u.full_name }}" required>
+    <select class="form-select" name="role" required>
+      {% for r in roles %}
+        <option value="{{ r }}" {% if u.role.value==r %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
 
-  <label>نام کاربری</label>
-  <input name="username" value="{{ u.username }}" required>
+    <select class="form-select" name="org_id">
+      <option value="">-- ارگان --</option>
+      {% for o in orgs %}
+        <option value="{{ o.id }}" {% if u.org_id==o.id %}selected{% endif %}>{{ o.name }}</option>
+      {% endfor %}
+    </select>
 
-  <label>نقش</label>
-  <select name="role" required>
-    {% for r in roles %}
-      <option value="{{ r }}" {% if r == u.role.value %}selected{% endif %}>{{ r }}</option>
-    {% endfor %}
-  </select>
+    <select class="form-select" name="county_id">
+      <option value="">-- شهرستان --</option>
+      {% for c in counties %}
+        <option value="{{ c.id }}" {% if u.county_id==c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
 
-  <label>ارگان</label>
-  <select name="org_id">
-    <option value="" {% if not u.org_id %}selected{% endif %}>--</option>
-    {% for o in orgs %}
-      <option value="{{ o.id }}" {% if u.org_id==o.id %}selected{% endif %}>{{ o.name }}</option>
-    {% endfor %}
-  </select>
+    <button class="btn btn-primary" type="submit">ذخیره</button>
+  </form>
 
-  <label>شهرستان</label>
-  <select name="county_id">
-    <option value="" {% if not u.county_id %}selected{% endif %}>--</option>
-    {% for c in counties %}
-      <option value="{{ c.id }}" {% if u.county_id==c.id %}selected{% endif %}>{{ c.name }}</option>
-    {% endfor %}
-  </select>
-
-  <hr>
-  <label>تغییر رمز عبور (اختیاری)</label>
-  <input name="new_password" type="password" placeholder="اگر خالی باشد تغییر نمی‌کند">
-
-  <button type="submit">ذخیره</button>
-  <a class="btn" href="/users">بازگشت</a>
-</form>
+  {% if error %}
+    <div class="alert alert-danger mt-3">{{ error }}</div>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1,41 +1,70 @@
 {% extends "base.html" %}
-{% block page_title %}Policy Matrix{% endblock %}
-{% block content %}
-<div class="card p-3 border-0 shadow-sm">
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <div>
-      <h5 class="m-0">Policy Matrix</h5>
-      <div class="text-muted small">این صفحه برای مستندسازی و تست سطح دسترسی‌هاست.</div>
-    </div>
-  </div>
 
-  <div class="table-responsive">
-    <table class="table table-sm align-middle">
-      <thead>
-        <tr>
-          <th>نقش</th>
-          <th>فرم‌ها</th>
-          <th>مشاهده گزارش</th>
-          <th>ایجاد گزارش</th>
-          <th>گردش‌کار</th>
-          <th>اعلان‌ها</th>
-          <th>مدیریت</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
+{% block page_title %}Policy Matrix{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+      <div>
+        <h5 class="m-0">Policy Matrix</h5>
+        <div class="text-muted small">ماتریس دسترسی‌ها (منبع: policy.png) — ✔ یعنی مجاز، — یعنی غیرمجاز</div>
+      </div>
+      <div class="text-muted small">آخرین وضعیت: بر اساس <code>app/core/rbac.py</code></div>
+    </div>
+
+    <hr class="my-3"/>
+
+    <div class="table-responsive" style="max-height: 70vh;">
+      <table class="table table-bordered table-hover table-sm align-middle text-center">
+        <thead class="table-light" style="position: sticky; top: 0; z-index: 2;">
           <tr>
-            <td><b>{{ r.role }}</b><div class="text-muted small">{{ r.code }}</div></td>
-            <td>{{ r.forms }}</td>
-            <td>{{ r.reports_view }}</td>
-            <td>{{ r.reports_create }}</td>
-            <td>{{ r.workflow }}</td>
-            <td>{{ r.notifications }}</td>
-            <td>{{ r.admin }}</td>
+            <th class="text-start" style="min-width: 280px; position: sticky; left: 0; z-index: 3;">Permission</th>
+            {% for r in roles %}
+              <th style="min-width: 160px;">
+                <div class="fw-semibold">{{ r.label }}</div>
+                <div class="text-muted small">{{ r.code }}</div>
+              </th>
+            {% endfor %}
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+
+        <tbody>
+          {% for group_name, perms in perm_groups %}
+            <tr class="table-secondary">
+              <td class="text-start fw-semibold" style="position: sticky; left: 0; z-index: 1;">{{ group_name }}</td>
+              {% for r in roles %}
+                <td></td>
+              {% endfor %}
+            </tr>
+
+            {% for perm in perms %}
+              <tr>
+                <td class="text-start" style="position: sticky; left: 0; z-index: 1; background: var(--bs-body-bg);">
+                  <div class="fw-semibold">{{ perm_labels.get(perm, perm) }}</div>
+                  <div class="text-muted small"><code>{{ perm }}</code></div>
+                </td>
+
+                {% for r in roles %}
+                  {% set allowed = matrix.get(perm, {}).get(r.code, False) %}
+                  <td>
+                    {% if allowed %}
+                      <span class="badge text-bg-success">✔</span>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-3 text-muted small">
+      نکته: اگر نیاز دارید این ماتریس را به‌صورت فایل خروجی (CSV/Excel) دریافت کنید بگویید تا اضافه کنم.
+    </div>
   </div>
 </div>
 {% endblock %}

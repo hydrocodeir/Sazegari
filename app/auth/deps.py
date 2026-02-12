@@ -16,4 +16,6 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, payload["user_id"])
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if hasattr(user, 'is_active') and not user.is_active:
+        raise HTTPException(status_code=403, detail="User is disabled")
     return user

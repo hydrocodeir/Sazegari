@@ -1,7 +1,11 @@
 <tr id="county-{{ county.id }}">
   <td>{{ county.id }}</td>
   <td>{{ county.name }}</td>
-  <td>
-    <button hx-delete="/counties/{{ county.id }}" hx-target="#county-{{ county.id }}" hx-swap="outerHTML" hx-confirm="حذف شود؟">حذف</button>
+  <td class="text-end">
+    <button class="btn btn-sm btn-outline-danger"
+            hx-delete="/counties/{{ county.id }}"
+            hx-target="#county-{{ county.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="حذف شود؟">حذف</button>
   </td>
 </tr>
