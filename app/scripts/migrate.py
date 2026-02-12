@@ -64,20 +64,8 @@ def main() -> int:
     else:
         rc = run(["alembic", "upgrade", "head"])
     if rc != 0:
-        # Only stamp if schema already exists (e.g., legacy DB without alembic).
-        with engine.begin() as conn:
-            existing_tables = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_schema = DATABASE() AND table_name='users'"
-                )
-            ).scalar()
-        if existing_tables:
-            rc2 = run(["alembic", "stamp", "head"])
-            if rc2 != 0:
-                return rc
-        else:
-            return rc
+        # Don't stamp on failure; fail fast so schema doesn't drift from alembic_version.
+        return rc
 
     # Seed default admin once (idempotent)
     from sqlalchemy.orm import Session
