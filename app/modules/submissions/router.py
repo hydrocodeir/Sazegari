@@ -17,7 +17,7 @@ from app.db.models.county import County
 from app.db.models.user import Role
 from app.db.models.submission import Submission
 from app.db.models.org_county import OrgCountyUnit
-from app.utils.schema import parse_schema, validate_payload
+from app.utils.schema import parse_schema, validate_payload, build_layout_blueprint
 from app.utils.badges import get_badge_count
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -29,27 +29,30 @@ def _parse_schema(schema_text: str) -> dict:
     return parse_schema(schema_text)
 
 
+
 def _build_layout_rows(schema: dict) -> tuple[list[dict], list[dict]]:
     """Build render-friendly layout rows from schema.
 
+    Behavior:
+      - Layout is defined as rows with 1-3 columns.
+      - If schema.layout is missing, a 2-column auto-layout is used.
+      - Fields not referenced in schema.layout will be appended at the end as
+        full-width single-column rows (in schema.fields order).
+
     Returns:
-      (rows, unplaced_fields)
-
-    Row shape:
-      {"columns": 2, "cells": [{"field": <fdef or None>, "col_class": "col-12 col-md-6"}, ...]}
-
-    Notes:
-      - If schema.layout is missing/invalid, we auto-generate a 2-column layout.
-      - Fields not placed in layout are returned as unplaced_fields (should still be rendered).
+      (rows, unplaced_fields)  # unplaced_fields are those not referenced in schema.layout (for UI info)
     """
     fields = schema.get("fields") or []
     if not isinstance(fields, list):
         fields = []
 
     field_map: dict[str, dict] = {}
+    ordered_names: list[str] = []
     for f in fields:
         if isinstance(f, dict) and f.get("name"):
-            field_map[str(f.get("name"))] = f
+            name = str(f.get("name"))
+            ordered_names.append(name)
+            field_map[name] = f
 
     def col_class(columns: int) -> str:
         if columns == 1:
@@ -58,47 +61,39 @@ def _build_layout_rows(schema: dict) -> tuple[list[dict], list[dict]]:
             return "col-12 col-md-4"
         return "col-12 col-md-6"
 
+    # Determine fields referenced explicitly in layout (for info)
+    explicit = set()
     layout = schema.get("layout")
-    rows: list[dict] = []
-    placed: set[str] = set()
-
-    if isinstance(layout, list) and layout:
+    if isinstance(layout, list):
         for r in layout:
-            if not isinstance(r, dict):
-                continue
-            cols = int(r.get("columns") or 2)
-            cols = 1 if cols < 1 else (3 if cols > 3 else cols)
-            names = r.get("fields") or []
-            if not isinstance(names, list):
-                names = []
-            names = [str(x) if x is not None else "" for x in names]
-            # normalize length
-            names = (names[:cols] + [""] * cols)[:cols]
-            cells = []
-            for n in names:
-                fdef = field_map.get(n) if n else None
-                if fdef:
-                    placed.add(n)
-                cells.append({"field": fdef, "col_class": col_class(cols)})
-            rows.append({"columns": cols, "cells": cells})
+            if isinstance(r, dict):
+                names = r.get("fields") or []
+                if isinstance(names, list):
+                    for n in names:
+                        if n:
+                            explicit.add(str(n))
 
-    # fallback: auto layout (2 columns)
-    if not rows and fields:
-        cols = 2
-        for i in range(0, len(fields), cols):
-            slice_f = fields[i : i + cols]
-            cells = []
-            for f in slice_f:
-                if isinstance(f, dict) and f.get("name"):
-                    placed.add(str(f.get("name")))
-                    cells.append({"field": f, "col_class": col_class(cols)})
-            # pad to cols
-            while len(cells) < cols:
-                cells.append({"field": None, "col_class": col_class(cols)})
-            rows.append({"columns": cols, "cells": cells})
+    blueprint = build_layout_blueprint(schema)
 
-    unplaced = [f for name, f in field_map.items() if name not in placed]
+    rows: list[dict] = []
+    for r in blueprint:
+        cols = int(r.get("columns") or 2)
+        cols = 1 if cols < 1 else (3 if cols > 3 else cols)
+        names = r.get("fields") or []
+        if not isinstance(names, list):
+            names = []
+        names = (names[:cols] + [""] * cols)[:cols]
+        cells = []
+        for n in names:
+            fdef = field_map.get(str(n)) if n else None
+            cells.append({"field": fdef, "col_class": col_class(cols)})
+        rows.append({"columns": cols, "cells": cells})
+
+    # fields not explicitly placed (informational only)
+    unplaced = [field_map[n] for n in ordered_names if n and n not in explicit]
     return rows, unplaced
+
+
 
 
 @router.get("", response_class=HTMLResponse)

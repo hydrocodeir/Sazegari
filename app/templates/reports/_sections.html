@@ -57,28 +57,64 @@
               {% endif %}
             {% endif %}
 
-            <div class="table-responsive">
-              <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
-                <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
-                <tbody>
-                  {% for k,v in (sub.payload or {}).items() %}
-                    {% set label = (fmeta.labels.get(k) if fmeta.labels else k) %}
-                    <tr>
-                      <td class="text-muted small">{{ label }}</td>
-                      <td>
-                        {% if v is mapping and v.path %}
-                          <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
-                        {% elif v is sequence and (v is not string) %}
-                          {{ v|join(", ") }}
+                        {% set layout = fmeta.layout if fmeta else [] %}
+            {% set fmap = fmeta.fields if fmeta else {} %}
+
+            {% if layout and layout|length > 0 %}
+              <div class="bg-light rounded-4 p-3">
+                {% for row in layout %}
+                  {% set cols = row.columns or 2 %}
+                  {% set col_class = "col-12" if cols==1 else ("col-12 col-md-4" if cols==3 else "col-12 col-md-6") %}
+                  <div class="row g-3 mb-2">
+                    {% for fname in (row.fields or []) %}
+                      <div class="{{ col_class }}">
+                        {% set f = (fmap.get(fname) if fmap else None) %}
+                        {% if f %}
+                          {% set v = (sub.payload or {}).get(fname) %}
+                          <div class="border rounded-4 p-2 bg-body">
+                            <div class="text-muted small mb-1">{{ f.label }}</div>
+                            <div class="small">
+                              {% if v is mapping and v.path %}
+                                <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
+                              {% elif v is sequence and (v is not string) %}
+                                {{ v|join(", ") }}
+                              {% else %}
+                                {{ v if v is not none else "" }}
+                              {% endif %}
+                            </div>
+                          </div>
                         {% else %}
-                          {{ v }}
+                          <div class="text-muted small">&nbsp;</div>
                         {% endif %}
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
+                  <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
+                  <tbody>
+                    {% for k,v in (sub.payload or {}).items() %}
+                      {% set label = (fmeta.labels.get(k) if fmeta.labels else k) %}
+                      <tr>
+                        <td class="text-muted small">{{ label }}</td>
+                        <td>
+                          {% if v is mapping and v.path %}
+                            <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
+                          {% elif v is sequence and (v is not string) %}
+                            {{ v|join(", ") }}
+                          {% else %}
+                            {{ v }}
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
           </div>
         </div>
       </div>

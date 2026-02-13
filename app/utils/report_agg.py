@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.models.report_submission import ReportSubmission
 from app.db.models.submission import Submission
 from app.db.models.form_template import FormTemplate
+from app.utils.schema import parse_schema, build_layout_blueprint
 
 def _label_map(schema_json: str) -> dict[str, str]:
     try:
@@ -19,6 +20,26 @@ def _label_map(schema_json: str) -> dict[str, str]:
             out[str(f["name"])] = str(f.get("label") or f["name"])
     return out
 
+
+def _schema_obj(schema_json: str) -> dict:
+    s = parse_schema(schema_json or "{}")
+    return s if isinstance(s, dict) else {}
+
+def _field_map(schema: dict) -> dict[str, dict]:
+    fields = schema.get("fields") if isinstance(schema, dict) else []
+    if not isinstance(fields, list):
+        return {}
+    out = {}
+    for f in fields:
+        if isinstance(f, dict) and f.get("name"):
+            name = str(f["name"])
+            out[name] = {
+                "name": name,
+                "label": str(f.get("label") or name),
+                "type": str(f.get("type") or "text").lower(),
+            }
+    return out
+
 def aggregate_content(db: Session, report_id: int) -> dict:
     links = db.query(ReportSubmission).filter(ReportSubmission.report_id == report_id).all()
     sub_ids = [l.submission_id for l in links]
@@ -29,12 +50,15 @@ def aggregate_content(db: Session, report_id: int) -> dict:
     form_ids = list({s.form_id for s in subs})
     forms = {f.id: f for f in db.query(FormTemplate).filter(FormTemplate.id.in_(form_ids)).all()}
 
-    # form meta (title + labels)
+    # form meta (title + labels + layout)
     forms_meta = {}
     for fid, f in forms.items():
+        schema = _schema_obj(f.schema_json)
         forms_meta[str(fid)] = {
             "title": f.title,
             "labels": _label_map(f.schema_json),
+            "layout": build_layout_blueprint(schema),
+            "fields": _field_map(schema),
         }
 
     submissions_out = []

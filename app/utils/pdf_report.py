@@ -422,33 +422,93 @@ def build_report_pdf(
 
             payload = sub.get("payload") or {}
             labels = fmeta.get("labels") if isinstance(fmeta, dict) else {}
-            # Table (RTL-friendly: value on left, label on right)
-            rows = [[rtl("مقدار"), rtl("عنوان")]]
-            for k, v in payload.items():
-                label = labels.get(k, k) if isinstance(labels, dict) else k
-                val = ""
-                if isinstance(v, dict) and v.get("path"):
-                    val = f"{v.get('filename','file')} - {v.get('path')}"
-                elif isinstance(v, list):
-                    val = ", ".join(map(str, v))
-                else:
-                    val = str(v)
-                rows.append([rtl(val), rtl(str(label))])
+            layout = fmeta.get("layout") if isinstance(fmeta, dict) else None
+            fields_map = fmeta.get("fields") if isinstance(fmeta, dict) else None
 
-            table = Table(rows, colWidths=[9*cm, 6*cm])
-            table.setStyle(TableStyle([
-                ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
-                ("FONTNAME", (0,0), (-1,0), font_bold),
-                ("FONTNAME", (0,1), (-1,-1), font_name),
-                ("FONTSIZE", (0,0), (-1,-1), 9),
-                ("VALIGN", (0,0), (-1,-1), "TOP"),
-                ("ALIGN", (0,0), (-1,-1), "RIGHT"),
-                ("RIGHTPADDING", (0,0), (-1,-1), 10),
-                ("LEFTPADDING", (0,0), (-1,-1), 10),
-            ]))
-            story.append(table)
-            story.append(Spacer(1, 10))
+            # Prefer layout-based rendering (same as فرم‌ساز)
+            if isinstance(layout, list) and isinstance(fields_map, dict) and layout:
+                total_w = 15 * cm
+                for r in layout:
+                    if not isinstance(r, dict):
+                        continue
+                    cols = int(r.get("columns") or 2)
+                    cols = 1 if cols < 1 else (3 if cols > 3 else cols)
+                    names = r.get("fields") or []
+                    if not isinstance(names, list):
+                        names = []
+                    names = (names[:cols] + [""] * cols)[:cols]
+
+                    row_cells = []
+                    for fname in names:
+                        if fname and fname in fields_map:
+                            f = fields_map.get(fname) or {}
+                            label = f.get("label") or labels.get(fname, fname)
+                            v = payload.get(fname)
+                            val = ""
+                            if isinstance(v, dict) and v.get("path"):
+                                val = f"{v.get('filename','file')} - {v.get('path')}"
+                            elif isinstance(v, list):
+                                val = ", ".join(map(str, v))
+                            elif v is None:
+                                val = ""
+                            else:
+                                val = str(v)
+
+                            cell_html = f"<b>{xml_escape(rtl(str(label)))}</b><br/>{xml_escape(rtl(val))}"
+                            row_cells.append(Paragraph(cell_html, base))
+                        else:
+                            row_cells.append(Paragraph("", base))
+
+                    if cols == 1:
+                        widths = [total_w]
+                    elif cols == 3:
+                        widths = [total_w/3] * 3
+                    else:
+                        widths = [total_w/2] * 2
+
+                    table = Table([row_cells], colWidths=widths)
+                    table.setStyle(TableStyle([
+                        ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
+                        ("BACKGROUND", (0,0), (-1,-1), colors.white),
+                        ("FONTNAME", (0,0), (-1,-1), font_name),
+                        ("FONTSIZE", (0,0), (-1,-1), 9),
+                        ("VALIGN", (0,0), (-1,-1), "TOP"),
+                        ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+                        ("RIGHTPADDING", (0,0), (-1,-1), 10),
+                        ("LEFTPADDING", (0,0), (-1,-1), 10),
+                        ("TOPPADDING", (0,0), (-1,-1), 8),
+                        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                    ]))
+                    story.append(table)
+                    story.append(Spacer(1, 6))
+            else:
+                # Fallback: key/value table
+                rows = [[rtl("مقدار"), rtl("عنوان")]]
+                for k, v in payload.items():
+                    label = labels.get(k, k) if isinstance(labels, dict) else k
+                    val = ""
+                    if isinstance(v, dict) and v.get("path"):
+                        val = f"{v.get('filename','file')} - {v.get('path')}"
+                    elif isinstance(v, list):
+                        val = ", ".join(map(str, v))
+                    else:
+                        val = str(v)
+                    rows.append([rtl(val), rtl(str(label))])
+
+                table = Table(rows, colWidths=[9*cm, 6*cm])
+                table.setStyle(TableStyle([
+                    ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
+                    ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
+                    ("FONTNAME", (0,0), (-1,0), font_bold),
+                    ("FONTNAME", (0,1), (-1,-1), font_name),
+                    ("FONTSIZE", (0,0), (-1,-1), 9),
+                    ("VALIGN", (0,0), (-1,-1), "TOP"),
+                    ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+                    ("RIGHTPADDING", (0,0), (-1,-1), 10),
+                    ("LEFTPADDING", (0,0), (-1,-1), 10),
+                ]))
+                story.append(table)
+                story.append(Spacer(1, 10))
     else:
         story.append(Paragraph(rtl("هیچ فرمی به گزارش اضافه نشده است."), base))
 

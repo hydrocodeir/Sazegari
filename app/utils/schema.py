@@ -13,6 +13,80 @@ def parse_schema(schema_text: str) -> dict:
 def _is_empty(val) -> bool:
     return val is None or val == "" or (isinstance(val, list) and len(val) == 0)
 
+
+
+def build_layout_blueprint(schema: dict) -> list[dict]:
+    """Return a normalized layout blueprint.
+
+    Output: list of rows {"columns": int, "fields": [name_or_empty,...]}.
+    Rules:
+      - Uses schema.layout if provided (list of rows) else auto 2-col layout.
+      - Any field not referenced in layout will be appended at the end as its own row (1 column).
+      - Field order for appended rows follows schema.fields order.
+    """
+    if not isinstance(schema, dict):
+        return []
+
+    fields = schema.get("fields") or []
+    if not isinstance(fields, list):
+        fields = []
+
+    # keep original field order
+    field_names: list[str] = []
+    for f in fields:
+        if isinstance(f, dict) and f.get("name"):
+            field_names.append(str(f["name"]))
+
+    def norm_cols(v) -> int:
+        try:
+            c = int(v)
+        except Exception:
+            c = 2
+        if c < 1:
+            c = 1
+        if c > 3:
+            c = 3
+        return c
+
+    rows: list[dict] = []
+    placed: set[str] = set()
+
+    layout = schema.get("layout")
+    if isinstance(layout, list) and layout:
+        for r in layout:
+            if not isinstance(r, dict):
+                continue
+            cols = norm_cols(r.get("columns") or 2)
+            names = r.get("fields") or []
+            if not isinstance(names, list):
+                names = []
+            names = [str(x) if x is not None else "" for x in names]
+            names = (names[:cols] + [""] * cols)[:cols]
+            for n in names:
+                if n:
+                    placed.add(n)
+            rows.append({"columns": cols, "fields": names})
+
+    # fallback: auto 2-col layout
+    if not rows and field_names:
+        cols = 2
+        for i in range(0, len(field_names), cols):
+            slice_names = field_names[i : i + cols]
+            slice_names = (slice_names[:cols] + [""] * cols)[:cols]
+            for n in slice_names:
+                if n:
+                    placed.add(n)
+            rows.append({"columns": cols, "fields": slice_names})
+
+    # append unplaced at end (each as a full-width row)
+    for n in field_names:
+        if n and n not in placed:
+            rows.append({"columns": 1, "fields": [n]})
+            placed.add(n)
+
+    return rows
+
+
 def validate_payload(schema: dict, payload: dict) -> list[str]:
     errors: list[str] = []
     fields = schema.get("fields") or []

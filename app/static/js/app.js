@@ -405,7 +405,7 @@ function refreshLayoutUI(fields){
     html += `<div class="alert alert-warning py-2 mb-2"><b>هشدار:</b> برخی فیلدها چندبار در چیدمان استفاده شده‌اند: <code>${Array.from(new Set(dup)).join(', ')}</code></div>`;
   }
   if(unplaced.length){
-    html += `<div class="alert alert-info py-2 mb-0"><b>توجه:</b> این فیلدها هنوز در چیدمان قرار نگرفته‌اند و پایین فرم، زیر عنوان «فیلدهای بدون چیدمان» نمایش داده می‌شوند: <code>${unplaced.map(f=>f.name).join(', ')}</code></div>`;
+    html += `<div class="alert alert-info py-2 mb-0"><b>توجه:</b> این فیلدها هنوز در چیدمان انتخاب نشده‌اند و در انتهای فرم به صورت سطری (یک‌ستونه) اضافه می‌شوند: <code>${unplaced.map(f=>f.name).join(', ')}</code></div>`;
   }
   warningsEl.innerHTML = html;
 }
@@ -468,12 +468,12 @@ function renderLayoutPreview(schema){
 
   if(unplaced.length){
     html += `<hr class="my-3">`;
-    html += `<div class="fw-semibold mb-2">فیلدهای بدون چیدمان</div>`;
-    html += `<div class="row g-3">`;
-    unplaced.forEach((f, idx)=>{
-      html += `<div class="col-12 col-md-6"><div class="p-2">${_previewInputHtml(f)}</div></div>`;
+    html += `<div class="text-muted small mb-2">فیلدهای انتخاب‌نشده (به صورت یک‌ستونه در انتهای فرم)</div>`;
+    unplaced.forEach((f)=>{
+      html += `<div class="row g-3 mb-2">`;
+      html += `<div class="col-12"><div class="p-2">${_previewInputHtml(f)}</div></div>`;
+      html += `</div>`;
     });
-    html += `</div>`;
   }
 
   if(!html){
