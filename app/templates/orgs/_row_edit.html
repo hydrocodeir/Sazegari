@@ -1,0 +1,19 @@
+<tr id="org-{{ org.id }}">
+  <td>{{ org.id }}</td>
+  <td colspan="2">
+    <form class="d-flex flex-wrap gap-2 align-items-center"
+          hx-put="/orgs/{{ org.id }}"
+          hx-target="#org-{{ org.id }}"
+          hx-swap="outerHTML">
+      <input class="form-control form-control-sm" style="max-width: 320px" name="name" value="{{ org.name }}" required />
+      <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              hx-get="/orgs/{{ org.id }}/row"
+              hx-target="#org-{{ org.id }}"
+              hx-swap="outerHTML">انصراف</button>
+      {% if error %}
+        <span class="text-danger small">{{ error }}</span>
+      {% endif %}
+    </form>
+  </td>
+</tr>

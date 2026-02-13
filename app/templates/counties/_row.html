@@ -1,7 +1,11 @@
 <tr id="county-{{ county.id }}">
   <td>{{ county.id }}</td>
   <td>{{ county.name }}</td>
-  <td class="text-end">
+    <td class="text-end">
+    <button class="btn btn-sm btn-outline-secondary me-1"
+            hx-get="/counties/{{ county.id }}/edit"
+            hx-target="#county-{{ county.id }}"
+            hx-swap="outerHTML">ویرایش</button>
     <button class="btn btn-sm btn-outline-danger"
             hx-delete="/counties/{{ county.id }}"
             hx-target="#county-{{ county.id }}"

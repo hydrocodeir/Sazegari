@@ -1,0 +1,19 @@
+<tr id="county-{{ county.id }}">
+  <td>{{ county.id }}</td>
+  <td colspan="2">
+    <form class="d-flex flex-wrap gap-2 align-items-center"
+          hx-put="/counties/{{ county.id }}"
+          hx-target="#county-{{ county.id }}"
+          hx-swap="outerHTML">
+      <input class="form-control form-control-sm" style="max-width: 320px" name="name" value="{{ county.name }}" required />
+      <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              hx-get="/counties/{{ county.id }}/row"
+              hx-target="#county-{{ county.id }}"
+              hx-swap="outerHTML">انصراف</button>
+      {% if error %}
+        <span class="text-danger small">{{ error }}</span>
+      {% endif %}
+    </form>
+  </td>
+</tr>

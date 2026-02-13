@@ -1,7 +1,7 @@
 <tr id="form-{{ form.id }}">
   <td>{{ form.id }}</td>
   <td><a href="/forms/{{ form.id }}/edit">{{ form.title }}</a></td>
-  <td>{{ form.org_id }}</td>
+  <td>{{ form.org.name if form.org else form.org_id }}</td>
   <td>
     {% if form.scope == 'province' %}
       استان

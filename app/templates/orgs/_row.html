@@ -1,7 +1,11 @@
 <tr id="org-{{ org.id }}">
   <td>{{ org.id }}</td>
   <td>{{ org.name }}</td>
-  <td class="text-end">
+    <td class="text-end">
+    <button class="btn btn-sm btn-outline-secondary me-1"
+            hx-get="/orgs/{{ org.id }}/edit"
+            hx-target="#org-{{ org.id }}"
+            hx-swap="outerHTML">ویرایش</button>
     <button class="btn btn-sm btn-outline-danger"
             hx-delete="/orgs/{{ org.id }}"
             hx-target="#org-{{ org.id }}"

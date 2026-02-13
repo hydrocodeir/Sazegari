@@ -38,15 +38,15 @@
   <h5>لیست گزارش‌ها</h5>
   <div class="table-responsive">
     <table class="table table-sm align-middle">
-      <thead><tr><th>#</th><th>نوع</th><th>org</th><th>county</th><th>status</th><th>owner</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>نوع</th><th>ارگان</th><th>شهرستان</th><th>وضعیت</th><th>مالک</th><th></th></tr></thead>
       <tbody>
         {% for r in reports %}
           <tr>
             <td>{{ r.id }}</td>
-            <td>{{ r.kind.value }}</td>
-            <td>{{ r.org_id }}</td>
-            <td>{{ r.county_id or '-' }}</td>
-            <td><span class="badge text-bg-secondary">{{ r.status.value }}</span></td>
+            <td>{{ r.kind_label }}</td>
+            <td>{{ r.org.name if r.org else r.org_id }}</td>
+            <td>{{ r.county.name if r.county else '-' }}</td>
+            <td><span class="badge text-bg-secondary">{{ r.status_label }}</span></td>
             <td>{{ (owner_names|default({})).get(r.current_owner_id, r.current_owner_id) }}</td>
             <td><a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">باز کردن</a></td>
           </tr>

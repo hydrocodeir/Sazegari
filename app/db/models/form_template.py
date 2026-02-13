@@ -1,5 +1,5 @@
 from sqlalchemy import Integer, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 class FormTemplate(Base):
@@ -8,6 +8,10 @@ class FormTemplate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id"), index=True)
     county_id: Mapped[int | None] = mapped_column(ForeignKey("counties.id"), nullable=True, index=True)
+
+    org = relationship("Org")
+    county = relationship("County")
+
 
     # scope:
     # - county   : فرم مخصوص یک شهرستان (county_id دارد)

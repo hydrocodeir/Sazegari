@@ -2,9 +2,9 @@
   <td>{{ u.id }}</td>
   <td>{{ u.full_name }}</td>
   <td>{{ u.username }}</td>
-  <td>{{ u.role.value }}</td>
-  <td>{{ u.org_id or "" }}</td>
-  <td>{{ u.county_id or "" }}</td>
+  <td>{{ u.role_label }}</td>
+  <td>{{ u.org.name if u.org else '' }}</td>
+  <td>{{ u.county.name if u.county else '' }}</td>
   <td>
     {% if u.is_active %}
       <span class="badge text-bg-success">فعال</span>
