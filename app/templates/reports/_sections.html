@@ -58,7 +58,7 @@
             {% endif %}
 
             <div class="table-responsive">
-              <table class="table table-sm align-middle">
+              <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
                 <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
                 <tbody>
                   {% for k,v in (sub.payload or {}).items() %}

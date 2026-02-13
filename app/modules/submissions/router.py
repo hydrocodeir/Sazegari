@@ -29,6 +29,78 @@ def _parse_schema(schema_text: str) -> dict:
     return parse_schema(schema_text)
 
 
+def _build_layout_rows(schema: dict) -> tuple[list[dict], list[dict]]:
+    """Build render-friendly layout rows from schema.
+
+    Returns:
+      (rows, unplaced_fields)
+
+    Row shape:
+      {"columns": 2, "cells": [{"field": <fdef or None>, "col_class": "col-12 col-md-6"}, ...]}
+
+    Notes:
+      - If schema.layout is missing/invalid, we auto-generate a 2-column layout.
+      - Fields not placed in layout are returned as unplaced_fields (should still be rendered).
+    """
+    fields = schema.get("fields") or []
+    if not isinstance(fields, list):
+        fields = []
+
+    field_map: dict[str, dict] = {}
+    for f in fields:
+        if isinstance(f, dict) and f.get("name"):
+            field_map[str(f.get("name"))] = f
+
+    def col_class(columns: int) -> str:
+        if columns == 1:
+            return "col-12"
+        if columns == 3:
+            return "col-12 col-md-4"
+        return "col-12 col-md-6"
+
+    layout = schema.get("layout")
+    rows: list[dict] = []
+    placed: set[str] = set()
+
+    if isinstance(layout, list) and layout:
+        for r in layout:
+            if not isinstance(r, dict):
+                continue
+            cols = int(r.get("columns") or 2)
+            cols = 1 if cols < 1 else (3 if cols > 3 else cols)
+            names = r.get("fields") or []
+            if not isinstance(names, list):
+                names = []
+            names = [str(x) if x is not None else "" for x in names]
+            # normalize length
+            names = (names[:cols] + [""] * cols)[:cols]
+            cells = []
+            for n in names:
+                fdef = field_map.get(n) if n else None
+                if fdef:
+                    placed.add(n)
+                cells.append({"field": fdef, "col_class": col_class(cols)})
+            rows.append({"columns": cols, "cells": cells})
+
+    # fallback: auto layout (2 columns)
+    if not rows and fields:
+        cols = 2
+        for i in range(0, len(fields), cols):
+            slice_f = fields[i : i + cols]
+            cells = []
+            for f in slice_f:
+                if isinstance(f, dict) and f.get("name"):
+                    placed.add(str(f.get("name")))
+                    cells.append({"field": f, "col_class": col_class(cols)})
+            # pad to cols
+            while len(cells) < cols:
+                cells.append({"field": None, "col_class": col_class(cols)})
+            rows.append({"columns": cols, "cells": cells})
+
+    unplaced = [f for name, f in field_map.items() if name not in placed]
+    return rows, unplaced
+
+
 @router.get("", response_class=HTMLResponse)
 def page(
     request: Request,
@@ -147,6 +219,7 @@ def new_page(
         require(user.role == Role.ORG_PROV_EXPERT, "این فرم فقط توسط کارشناس استان قابل تکمیل است.", 403)
 
     schema = _parse_schema(form.schema_json if form else "{}")
+    layout_rows, unplaced_fields = _build_layout_rows(schema)
 
     counties_for_select: list[County] = []
     # Provincial expert can submit for all counties of their org (except province-scope forms)
@@ -166,6 +239,8 @@ def new_page(
             "request": request,
             "form": form,
             "schema": schema,
+            "layout_rows": layout_rows,
+            "unplaced_fields": unplaced_fields,
             "user": user,
             "badge_count": get_badge_count(db, user),
             "counties_for_select": counties_for_select,
@@ -199,6 +274,7 @@ async def create(
         require(user.role == Role.ORG_PROV_EXPERT, "این فرم فقط توسط کارشناس استان قابل تکمیل است.", 403)
 
     schema = _parse_schema(form.schema_json if form else "{}")
+    layout_rows, unplaced_fields = _build_layout_rows(schema)
 
     try:
         payload = json.loads(payload_json or "{}")
@@ -210,6 +286,8 @@ async def create(
                 "error": "payload_json معتبر نیست.",
                 "form": form,
                 "schema": schema,
+                "layout_rows": layout_rows,
+                "unplaced_fields": unplaced_fields,
                 "user": user,
                 "badge_count": get_badge_count(db, user),
             },
@@ -262,6 +340,8 @@ async def create(
                 "error": "\n".join(errors),
                 "form": form,
                 "schema": schema,
+                "layout_rows": layout_rows,
+                "unplaced_fields": unplaced_fields,
                 "user": user,
                 "badge_count": get_badge_count(db, user),
             },
@@ -306,6 +386,8 @@ async def create(
                 "error": "واحد ارگان/شهرستان برای این انتخاب تعریف نشده است.",
                 "form": form,
                 "schema": schema,
+                "layout_rows": layout_rows,
+                "unplaced_fields": unplaced_fields,
                 "user": user,
                 "badge_count": get_badge_count(db, user),
             },

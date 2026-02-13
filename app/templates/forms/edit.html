@@ -65,6 +65,32 @@
       </div>
     </div>
 
+    <!-- Layout Builder (Rows/Columns) + Live Preview -->
+    <div class="border rounded-3 p-3 mb-2 bg-body" id="layoutBuilder">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+          <b>چیدمان فرم</b>
+          <div class="text-muted small">ردیف‌ها و تعداد ستون‌ها را تعیین کن و فیلدها را در جایگاه مناسب قرار بده (کشیدن و رها کردن یا انتخاب از لیست).</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addLayoutRow()"><i class="bi bi-plus"></i> افزودن ردیف</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="autoLayout(true)"><i class="bi bi-magic"></i> چیدمان خودکار</button>
+        </div>
+      </div>
+
+      <div class="mb-2">
+        <div class="text-muted small mb-1">لیست فیلدها (برای Drag & Drop):</div>
+        <div id="fieldPalette" class="d-flex flex-wrap gap-2"></div>
+      </div>
+
+      <div id="layoutRows" class="d-flex flex-column gap-2"></div>
+      <div id="layoutWarnings" class="mt-2"></div>
+
+      <hr class="my-3">
+      <div class="fw-semibold mb-2">پیش‌نمایش فرم</div>
+      <div class="border rounded-4 p-3 bg-light" id="layoutPreview"></div>
+    </div>
+
     <input type="hidden" name="schema_text" id="schema_text" value="{}"/>
 
     <details class="mt-2">
@@ -95,6 +121,12 @@ document.addEventListener("DOMContentLoaded", ()=>{
   } else {
     addFieldRow({name:"year", label:"سال", type:"number", required:true});
   }
+  // Layout init
+  try{
+    if(typeof initLayoutBuilderFromSchema === "function"){
+      initLayoutBuilderFromSchema(obj && obj.layout ? obj.layout : null);
+    }
+  }catch(e){ /* ignore */ }
   // syncSchemaFromBuilder will set hidden input
   syncSchemaFromBuilder();
 });

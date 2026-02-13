@@ -163,9 +163,21 @@ pre { white-space: pre-wrap; word-break: break-word; }
 html, body{ height:100%; }
 body{
   font-family: var(--bs-body-font-family);
+  direction: rtl;
+  text-align: right;
   background: radial-gradient(1200px 420px at 85% 0%, rgba(13,110,253,.12), transparent 55%),
               radial-gradient(900px 380px at 10% 20%, rgba(20,184,166,.10), transparent 55%),
               var(--bs-body-bg);
+}
+
+/* Force RTL on common content blocks */
+.table{ direction: rtl; }
+.card, .modal, .offcanvas, .dropdown-menu{ direction: rtl; }
+
+/* LTR helpers (email, url, codes, numbers) */
+.ltr, input[type="email"], input[type="url"], input[type="password"], input[type="number"], code, pre{
+  direction: ltr;
+  text-align: left;
 }
 
 .app-container{ max-width: 1320px; }
@@ -206,6 +218,26 @@ body{
   border-bottom: 1px solid rgba(15,23,42,.08);
 }
 .table tbody tr:hover{ background: rgba(13,110,253,.04); }
+
+/* Form layout builder */
+.field-chip{ cursor: grab; user-select:none; }
+.layout-drop{ transition: outline .12s ease, background .12s ease; }
+.layout-drop.dragover{ outline: 2px dashed rgba(13,110,253,.5); background: rgba(13,110,253,.06) !important; }
+
+/* Pagination controls */
+.table-pager{
+  justify-content: flex-start;
+}
+.table-pager .btn{ padding: .25rem .75rem; }
+.table-pager select.form-select{ padding-top: .2rem; padding-bottom: .2rem; }
+
+/* Table pagination UI */
+.table-pager{
+  padding: .25rem .25rem 0 .25rem;
+}
+.table-pager .btn{
+  padding: .25rem .65rem;
+}
 
 /* Badges */
 .badge{ border-radius: 999px; padding: .4em .7em; }

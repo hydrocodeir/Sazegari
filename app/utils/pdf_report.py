@@ -15,6 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from pathlib import Path
 
 try:
     import arabic_reshaper
@@ -142,9 +143,41 @@ def html_to_paragraphs(html: str) -> list[str]:
         return lines
 
 
-def _register_font() -> str:
-    """Try register a Persian-capable font. Return font name."""
-    # DejaVu Sans is common on Debian
+def _register_font() -> tuple[str, str]:
+    """Try register a Persian-capable font.
+
+    Returns:
+      (regular_font_name, bold_font_name)
+
+    Preferred: Vazirmatn (local files in app/static/fonts)
+    Fallback: DejaVu Sans (system)
+    """
+
+    # 1) Local Vazirmatn (recommended)
+    try:
+        fonts_dir = Path(__file__).resolve().parent.parent / "static" / "fonts"
+        reg = fonts_dir / "Vazirmatn-Regular.ttf"
+        bold = fonts_dir / "Vazirmatn-Bold.ttf"
+        if reg.exists():
+            pdfmetrics.registerFont(TTFont("Vazirmatn", str(reg)))
+            if bold.exists():
+                pdfmetrics.registerFont(TTFont("Vazirmatn-Bold", str(bold)))
+                try:
+                    pdfmetrics.registerFontFamily(
+                        "Vazirmatn",
+                        normal="Vazirmatn",
+                        bold="Vazirmatn-Bold",
+                        italic="Vazirmatn",
+                        boldItalic="Vazirmatn-Bold",
+                    )
+                except Exception:
+                    pass
+                return ("Vazirmatn", "Vazirmatn-Bold")
+            return ("Vazirmatn", "Vazirmatn")
+    except Exception:
+        pass
+
+    # 2) System DejaVu Sans
     candidates = [
         ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
         ("DejaVuSans", "/usr/share/fonts/dejavu/DejaVuSans.ttf"),
@@ -152,10 +185,10 @@ def _register_font() -> str:
     for name, path in candidates:
         try:
             pdfmetrics.registerFont(TTFont(name, path))
-            return name
+            return (name, name)
         except Exception:
             continue
-    return "Helvetica"
+    return ("Helvetica", "Helvetica")
 
 
 def _header_footer(canvas, doc, meta: dict[str, str]):
@@ -177,7 +210,7 @@ def _header_footer(canvas, doc, meta: dict[str, str]):
 
     canvas.setFillColor(colors.black)
     title = rtl(meta.get("title", "گزارش رسمی سازگاری با کم‌آبی"))
-    canvas.setFont(meta.get("font", "Helvetica"), 12)
+    canvas.setFont(meta.get("font_bold", meta.get("font", "Helvetica")), 12)
     canvas.drawRightString(width-2.6*cm, height-1.2*cm, title)
 
     sub = rtl(meta.get("subtitle", "سامانه جمع‌آوری داده و گزارش‌دهی"))
@@ -216,7 +249,7 @@ def build_report_pdf(
     created_by_name: str | None = None,
 ) -> bytes:
     """Build an official-looking PDF from report doc."""
-    font_name = _register_font()
+    font_name, font_bold = _register_font()
 
     styles = getSampleStyleSheet()
     base = ParagraphStyle(
@@ -230,6 +263,7 @@ def build_report_pdf(
     h1 = ParagraphStyle(
         name="H1",
         parent=base,
+        fontName=font_bold,
         fontSize=14,
         leading=20,
         alignment=TA_CENTER,
@@ -238,6 +272,7 @@ def build_report_pdf(
     h2 = ParagraphStyle(
         name="H2",
         parent=base,
+        fontName=font_bold,
         fontSize=12,
         leading=18,
         spaceBefore=10,
@@ -276,6 +311,7 @@ def build_report_pdf(
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "report_no": f"Report #{getattr(report,'id', '')}",
         "font": font_name,
+        "font_bold": font_bold,
     }
 
     doc_tpl = SimpleDocTemplate(
@@ -289,33 +325,38 @@ def build_report_pdf(
     )
 
     story: list[Any] = []
-    story.append(Paragraph(rtl(meta.get("title") or "گزارش سازگاری با کم‌آبی"), h1))
+    # Cover-ish title block
     story.append(Spacer(1, 6))
+    story.append(Paragraph(rtl(meta.get("title") or "گزارش سازگاری با کم‌آبی"), h1))
+    if meta.get("subtitle"):
+        story.append(Paragraph(rtl(meta.get("subtitle")), ParagraphStyle(name="Sub", parent=base, alignment=TA_CENTER, textColor=colors.HexColor("#57606a"))))
+    story.append(Spacer(1, 10))
 
     # Meta table
-    meta_rows = []
-    meta_rows.append([rtl("شماره گزارش"), rtl(str(getattr(report, "id", "")))])
-    meta_rows.append([rtl("وضعیت"), rtl(getattr(report, "status_label", "") or getattr(getattr(report, "status", None), "value", ""))])
+    # Meta table (RTL-friendly: value on left, label on right)
+    meta_rows: list[list[str]] = []
+    meta_rows.append([rtl(str(getattr(report, "id", ""))), rtl("شماره گزارش")])
+    meta_rows.append([rtl(getattr(report, "status_label", "") or getattr(getattr(report, "status", None), "value", "")), rtl("وضعیت")])
     if owner_name:
-        meta_rows.append([rtl("در صف"), rtl(owner_name)])
-    if org_name:
-        meta_rows.append([rtl("ارگان"), rtl(org_name)])
-    else:
-        meta_rows.append([rtl("ارگان"), rtl(str(getattr(report, "org_id", "")))])
-    if county_name:
-        meta_rows.append([rtl("شهرستان"), rtl(county_name)])
-    else:
-        meta_rows.append([rtl("شهرستان"), rtl(str(getattr(report, "county_id", "")))])
+        meta_rows.append([rtl(owner_name), rtl("در صف")])
+    meta_rows.append([rtl(org_name) if org_name else rtl(str(getattr(report, "org_id", ""))), rtl("ارگان")])
+    meta_rows.append([rtl(county_name) if county_name else rtl(str(getattr(report, "county_id", ""))), rtl("شهرستان")])
     if created_by_name:
-        meta_rows.append([rtl("تهیه‌کننده"), rtl(created_by_name)])
+        meta_rows.append([rtl(created_by_name), rtl("تهیه‌کننده")])
 
-    t = Table(meta_rows, colWidths=[4*cm, 11*cm])
+    t = Table(meta_rows, colWidths=[11*cm, 4*cm])
     t.setStyle(TableStyle([
         ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
+        ("BACKGROUND", (1,0), (1,-1), colors.HexColor("#f6f8fa")),
         ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("FONTNAME", (0,0), (-1,-1), font_name),
-        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+        ("RIGHTPADDING", (0,0), (-1,-1), 10),
+        ("LEFTPADDING", (0,0), (-1,-1), 10),
+        ("FONTNAME", (0,0), (0,-1), font_name),
+        ("FONTNAME", (1,0), (1,-1), font_bold),
+        ("FONTSIZE", (0,0), (-1,-1), 9.5),
+        ("TEXTCOLOR", (1,0), (1,-1), colors.HexColor("#24292f")),
+        ("TEXTCOLOR", (0,0), (0,-1), colors.HexColor("#0969da")),
     ]))
     story.append(t)
     story.append(Spacer(1, 12))
@@ -326,19 +367,30 @@ def build_report_pdf(
     for p in html_to_paragraphs(intro_html):
         story.append(Paragraph(p, base))
         story.append(Spacer(1, 4))
+    if not html_to_paragraphs(intro_html):
+        story.append(Paragraph(rtl("—"), small))
 
     # Attachments
     story.append(Spacer(1, 6))
     story.append(Paragraph(rtl("پیوست‌ها"), h2))
     if attachments:
+        rows = [[rtl("فایل"), rtl("آپلودکننده")]]
         for a in attachments:
             up = uploader_map.get(getattr(a, "uploaded_by_id", 0), str(getattr(a, "uploaded_by_id", "")))
-            line = f"- {getattr(a,'filename','')} ({up})"
-            story.append(Paragraph(xml_escape(rtl(line)), small))
-            url = getattr(a, "url", "")
-            if url:
-                story.append(Paragraph(xml_escape(url), ParagraphStyle(name="Url", parent=small, alignment=TA_RIGHT)))
-            story.append(Spacer(1, 3))
+            rows.append([rtl(getattr(a,'filename','')), rtl(up)])
+        at = Table(rows, colWidths=[11*cm, 4*cm])
+        at.setStyle(TableStyle([
+            ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
+            ("FONTNAME", (0,0), (-1,0), font_bold),
+            ("FONTNAME", (0,1), (-1,-1), font_name),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("RIGHTPADDING", (0,0), (-1,-1), 10),
+            ("LEFTPADDING", (0,0), (-1,-1), 10),
+        ]))
+        story.append(at)
     else:
         story.append(Paragraph(rtl("پیوستی ثبت نشده است."), small))
 
@@ -370,7 +422,8 @@ def build_report_pdf(
 
             payload = sub.get("payload") or {}
             labels = fmeta.get("labels") if isinstance(fmeta, dict) else {}
-            rows = [[rtl("عنوان"), rtl("مقدار")]]
+            # Table (RTL-friendly: value on left, label on right)
+            rows = [[rtl("مقدار"), rtl("عنوان")]]
             for k, v in payload.items():
                 label = labels.get(k, k) if isinstance(labels, dict) else k
                 val = ""
@@ -380,15 +433,19 @@ def build_report_pdf(
                     val = ", ".join(map(str, v))
                 else:
                     val = str(v)
-                rows.append([rtl(str(label)), rtl(val)])
+                rows.append([rtl(val), rtl(str(label))])
 
-            table = Table(rows, colWidths=[6*cm, 9*cm])
+            table = Table(rows, colWidths=[9*cm, 6*cm])
             table.setStyle(TableStyle([
                 ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
                 ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
-                ("FONTNAME", (0,0), (-1,-1), font_name),
+                ("FONTNAME", (0,0), (-1,0), font_bold),
+                ("FONTNAME", (0,1), (-1,-1), font_name),
                 ("FONTSIZE", (0,0), (-1,-1), 9),
                 ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("ALIGN", (0,0), (-1,-1), "RIGHT"),
+                ("RIGHTPADDING", (0,0), (-1,-1), 10),
+                ("LEFTPADDING", (0,0), (-1,-1), 10),
             ]))
             story.append(table)
             story.append(Spacer(1, 10))
@@ -402,6 +459,8 @@ def build_report_pdf(
     for p in html_to_paragraphs(concl_html):
         story.append(Paragraph(p, base))
         story.append(Spacer(1, 4))
+    if not html_to_paragraphs(concl_html):
+        story.append(Paragraph(rtl("—"), small))
 
     # History
     story.append(Spacer(1, 8))
@@ -418,14 +477,15 @@ def build_report_pdf(
     story.append(Spacer(1, 14))
     story.append(Paragraph(rtl("محل امضا و مهر"), h2))
     sig = Table([
-        [rtl("تهیه‌کننده"), rtl("تأیید مدیر"), rtl("تأیید دبیرخانه")],
+        [rtl("تأیید دبیرخانه"), rtl("تأیید مدیر"), rtl("تهیه‌کننده")],
         ["\n\n\n__________________", "\n\n\n__________________", "\n\n\n__________________"],
         [rtl("نام و امضا"), rtl("نام و امضا"), rtl("نام و امضا")],
     ], colWidths=[5.2*cm, 5.2*cm, 5.2*cm])
     sig.setStyle(TableStyle([
         ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
-        ("FONTNAME", (0,0), (-1,-1), font_name),
+        ("FONTNAME", (0,0), (-1,0), font_bold),
+        ("FONTNAME", (0,1), (-1,-1), font_name),
         ("FONTSIZE", (0,0), (-1,-1), 9),
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "TOP"),

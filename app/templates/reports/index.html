@@ -37,7 +37,7 @@
 <div class="card p-3">
   <h5>لیست گزارش‌ها</h5>
   <div class="table-responsive">
-    <table class="table table-sm align-middle">
+    <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
       <thead><tr><th>#</th><th>نوع</th><th>ارگان</th><th>شهرستان</th><th>وضعیت</th><th>مالک</th><th></th></tr></thead>
       <tbody>
         {% for r in reports %}

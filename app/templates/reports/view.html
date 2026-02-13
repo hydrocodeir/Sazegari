@@ -220,7 +220,7 @@
     <div class="card p-3 border-0 shadow-sm hover-lift">
       <h6 class="mb-3">تاریخچه گردش‌کار</h6>
       <div class="table-responsive">
-        <table class="table table-sm align-middle">
+        <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
           <thead><tr><th>#</th><th>اقدام</th><th>از</th><th>به</th><th>انجام‌دهنده</th></tr></thead>
           <tbody>
             {% for l in logs %}
@@ -247,7 +247,7 @@
         <div class="text-muted small">تا الان تغییری ثبت نشده است.</div>
       {% else %}
         <div class="table-responsive">
-          <table class="table table-sm align-middle">
+          <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
             <thead>
               <tr>
                 <th>#</th>
