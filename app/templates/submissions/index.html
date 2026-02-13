@@ -32,12 +32,14 @@
         <h5 class="m-0">آخرین ثبت‌ها</h5>
         <span class="text-muted small">نمایش تا 200 مورد</span>
       </div>
+
       {% if counties_for_filter and counties_for_filter|length > 0 %}
         <form method="get" action="/submissions" class="row g-2 align-items-end mb-2">
           <div class="col-md-6">
-            <label class="form-label mb-0 small text-muted">فیلتر شهرستان</label>
+            <label class="form-label mb-0 small text-muted">فیلتر حوزه</label>
             <select class="form-select" name="county_id">
-              <option value="">همه شهرستان‌ها</option>
+              <option value="" {% if not selected_county_id %}selected{% endif %}>همه</option>
+              <option value="0" {% if selected_county_id == '0' %}selected{% endif %}>استان</option>
               {% for c in counties_for_filter %}
                 <option value="{{ c.id }}" {% if selected_county_id and (selected_county_id|string)==(c.id|string) %}selected{% endif %}>{{ c.name }}</option>
               {% endfor %}
@@ -48,6 +50,7 @@
           </div>
         </form>
       {% endif %}
+
       {% if subs and subs|length>0 %}
         <div class="table-responsive">
           <table class="table table-sm align-middle">
@@ -55,7 +58,7 @@
               <tr>
                 <th>#</th>
                 <th>فرم</th>
-                <th>شهرستان</th>
+                <th>حوزه</th>
                 <th>created_by</th>
                 <th></th>
               </tr>
@@ -65,7 +68,13 @@
                 <tr>
                   <td>{{ s.id }}</td>
                   <td>{{ forms_map.get(s.form_id, 'form#'+(s.form_id|string)) }}</td>
-                  <td>{{ unit_to_county_name.get(s.org_county_unit_id, '') }}</td>
+                  <td>
+                    {% if s.county_id %}
+                      {{ county_name_by_id.get(s.county_id, s.county_id) }}
+                    {% else %}
+                      استان
+                    {% endif %}
+                  </td>
                   <td>{{ s.created_by_id }}</td>
                   <td class="text-end">
                     <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ s.id }}">مشاهده</a>

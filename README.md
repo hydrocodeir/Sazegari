@@ -254,7 +254,7 @@ docker compose up --build
 - دیتابیس: `localhost:3306` (MySQL)
 - Redis: `localhost:6379`
 
-**ورود اولیه (قابل تنظیم با ENV):** `admin / admin123`
+**ورود اولیه (قابل تنظیم با ENV):** `admin / 123`
 
 پاک‌کردن کامل داده‌ها:
 
@@ -267,6 +267,7 @@ docker compose down -v
 - صبر تا آماده شدن MySQL
 - اجرای `alembic upgrade head` (یا stamp برای دیتابیس legacy)
 - ساخت ادمین پیش‌فرض در صورت فعال بودن `AUTO_CREATE_ADMIN`
+- ساخت داده‌های نمونه برای تست سریع در صورت فعال بودن `AUTO_SEED_SAMPLE`
 
 ---
 
@@ -341,6 +342,7 @@ alembic upgrade head
 
 ### Bootstrap (ادمین اولیه)
 - `AUTO_CREATE_ADMIN` اگر `true` و کاربر وجود نداشته باشد ساخته می‌شود
+- ساخت داده‌های نمونه برای تست سریع در صورت فعال بودن `AUTO_SEED_SAMPLE`
 - `DEFAULT_ADMIN_USERNAME`
 - `DEFAULT_ADMIN_PASSWORD`
 - `DEFAULT_ADMIN_FULL_NAME`

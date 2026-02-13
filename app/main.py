@@ -201,20 +201,10 @@ def home(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
         pass
     elif user.role.value.startswith("org_prov"):
         reports_q = reports_q.filter(Report.org_id == user.org_id)
-        subs_q = subs_q.join(OrgCountyUnit, Submission.org_county_unit_id == OrgCountyUnit.id).filter(
-            OrgCountyUnit.org_id == user.org_id
-        )
+        subs_q = subs_q.filter(Submission.org_id == user.org_id)
     else:
         reports_q = reports_q.filter(Report.org_id == user.org_id, Report.county_id == user.county_id)
-        unit = (
-            db.query(OrgCountyUnit)
-            .filter(OrgCountyUnit.org_id == user.org_id, OrgCountyUnit.county_id == user.county_id)
-            .first()
-        )
-        if unit:
-            subs_q = subs_q.filter(Submission.org_county_unit_id == unit.id)
-        else:
-            subs_q = subs_q.filter(Submission.id == -1)
+        subs_q = subs_q.filter(Submission.org_id == user.org_id, Submission.county_id == user.county_id)
 
     kpi = {
         "unread_notifications": get_badge_count(db, user),

@@ -18,7 +18,7 @@
         <label class="form-label">شهرستان (اختیاری)</label>
         <select name="county_id" class="form-select">
           <option value="" {% if form.scope == 'all' %}selected{% endif %}>همه شهرستان‌ها</option>
-          {% if user.role.value == 'org_prov_expert' %}
+          {% if user.role.value == 'secretariat_admin' %}
             <option value="province" {% if form.scope == 'province' %}selected{% endif %}>استان</option>
           {% endif %}
           {% for c in counties %}

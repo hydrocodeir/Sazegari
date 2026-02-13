@@ -19,8 +19,14 @@
           <option value="{{ c.id }}">{{ c.name }}</option>
         {% endfor %}
       </select>
-      <div class="form-text">برای نقش کارشناس استان، انتخاب شهرستان الزامی است.</div>
+      <div class="form-text">برای نقش کارشناس استان (فرم‌های شهرستانی/عمومی)، انتخاب شهرستان الزامی است.</div>
     </div>
+  {% else %}
+    {% if user.role.value == 'org_prov_expert' and form.scope == 'province' %}
+      <div class="alert alert-info">
+        این فرم مخصوص تهیه <b>گزارش جامع استانی</b> است و به شهرستان خاصی تعلق ندارد.
+      </div>
+    {% endif %}
   {% endif %}
 
   <div class="row g-3">

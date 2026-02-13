@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.config import settings
 from app.auth.deps import get_current_user
-from app.core.rbac import require, can_view_report, can_create_report
+from app.core.rbac import require, can_view_report, can_create_report, is_secretariat
 from app.core.workflow import (
     allowed_actions,
     allowed_actions_for_status,
@@ -187,9 +187,13 @@ def page(request: Request, db: Session = Depends(get_db), user=Depends(get_curre
 
     subs = []
     if user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and user.org_id and user.county_id:
-        unit = db.query(OrgCountyUnit).filter(OrgCountyUnit.org_id==user.org_id, OrgCountyUnit.county_id==user.county_id).first()
-        if unit:
-            subs = db.query(Submission).filter(Submission.org_county_unit_id==unit.id).order_by(Submission.id.desc()).limit(200).all()
+        subs = (
+            db.query(Submission)
+            .filter(Submission.org_id == user.org_id, Submission.county_id == user.county_id)
+            .order_by(Submission.id.desc())
+            .limit(200)
+            .all()
+        )
 
     forms_map_subs = {}
     if subs:
@@ -329,10 +333,30 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
     forms_map_attached = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
 
     available_subs = []
-    if user.org_id and user.county_id and user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and _can_edit(user, r):
-        unit = db.query(OrgCountyUnit).filter(OrgCountyUnit.org_id==user.org_id, OrgCountyUnit.county_id==user.county_id).first()
-        if unit:
-            available_subs = db.query(Submission).filter(Submission.org_county_unit_id==unit.id).order_by(Submission.id.desc()).limit(200).all()
+    if _can_edit(user, r):
+        # County report: show submissions for the same org/county
+        if r.kind == ReportKind.COUNTY and r.org_id and r.county_id:
+            available_subs = (
+                db.query(Submission)
+                .filter(Submission.org_id == r.org_id, Submission.county_id == r.county_id)
+                .order_by(Submission.id.desc())
+                .limit(200)
+                .all()
+            )
+        # Provincial report: only province-scope submissions (county_id = NULL)
+        elif r.kind == ReportKind.PROVINCIAL and r.org_id:
+            available_subs = (
+                db.query(Submission)
+                .join(FormTemplate, Submission.form_id == FormTemplate.id)
+                .filter(
+                    Submission.org_id == r.org_id,
+                    Submission.county_id.is_(None),
+                    FormTemplate.scope == "province",
+                )
+                .order_by(Submission.id.desc())
+                .limit(200)
+                .all()
+            )
 
     available_forms = []
 
@@ -462,37 +486,47 @@ def submission_options(
 ):
     report = db.get(Report, report_id)
     require(report is not None, "گزارش یافت نشد", 404)
-    # RBAC guard: can view this report only if scoped to the same org and permitted by role.
     require(can_view_report(user, report.org_id, report.county_id, report.current_owner_id))
-    # فقط برای همان واحد (org/county) و سطح دسترسی مناسب
-    require(user.org_id == report.org_id and user.county_id == report.county_id, "دسترسی ندارید", 403)
 
-    # Submission ها به جای org_id/county_id، با org_county_unit_id ذخیره می‌شوند.
-    # پس برای همان گزارش، ابتدا واحد متناظر (org/county) را پیدا می‌کنیم و بعد Submission ها را فیلتر می‌کنیم.
-    unit = (
-        db.query(OrgCountyUnit)
-        .filter(OrgCountyUnit.org_id == report.org_id)
-        .filter(OrgCountyUnit.county_id == report.county_id)
-        .first()
-    )
+    # When editing, allow options for:
+    # - County report: same org/county (except secretariat view-only won't show this anyway)
+    # - Provincial report: same org (or secretariat), province-scope submissions only
+    if report.kind == ReportKind.COUNTY:
+        require(report.county_id is not None, "گزارش شهرستان نامعتبر است", 400)
+        if not is_secretariat(user):
+            require(user.org_id == report.org_id and user.county_id == report.county_id, "دسترسی ندارید", 403)
 
-    if unit is None or form_id is None:
-        subs = []
-    else:
         subs = (
             db.query(Submission)
-            .filter(Submission.org_county_unit_id == unit.id)
-            .filter(Submission.form_id == form_id)
+            .filter(
+                Submission.org_id == report.org_id,
+                Submission.county_id == report.county_id,
+                Submission.form_id == form_id,
+            )
             .order_by(Submission.id.desc())
             .limit(200)
             .all()
         )
 
-    # map for label
-    fids = [form_id]
-    forms_map_available = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids)).all()} if fids else {}
+    else:  # PROVINCIAL
+        if not is_secretariat(user):
+            require(user.org_id == report.org_id, "دسترسی ندارید", 403)
 
+        subs = (
+            db.query(Submission)
+            .join(FormTemplate, Submission.form_id == FormTemplate.id)
+            .filter(
+                Submission.org_id == report.org_id,
+                Submission.county_id.is_(None),
+                Submission.form_id == form_id,
+                FormTemplate.scope == "province",
+            )
+            .order_by(Submission.id.desc())
+            .limit(200)
+            .all()
+        )
 
+    forms_map_available = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id == form_id).all()}
 
     return request.app.state.templates.TemplateResponse(
         "reports/_submission_options.html",
@@ -823,6 +857,27 @@ def add_section(
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
     require(_can_edit(user, r), "در این وضعیت امکان افزودن بخش وجود ندارد.")
+    # Validate submission eligibility for this report
+    sub = db.get(Submission, submission_id)
+    require(sub is not None, "ثبت مورد نظر یافت نشد", 404)
+    sub_form = db.get(FormTemplate, sub.form_id) if sub else None
+
+    if r.kind == ReportKind.COUNTY:
+        require(
+            sub.org_id == r.org_id and sub.county_id == r.county_id,
+            "این ثبت متعلق به این گزارش شهرستان نیست.",
+            400,
+        )
+        if sub_form is not None:
+            require(sub_form.scope != "province", "فرم‌های استانی فقط در گزارش استانی قابل استفاده هستند.", 400)
+    else:  # PROVINCIAL
+        require(
+            sub.org_id == r.org_id and sub.county_id is None,
+            "این ثبت متعلق به این گزارش استانی نیست.",
+            400,
+        )
+        require(sub_form is not None and sub_form.scope == "province", "فقط ثبت‌های فرم استانی در گزارش استانی قابل استفاده هستند.", 400)
+
     # ensure attached
     db.add(ReportSubmission(report_id=r.id, submission_id=submission_id))
     try:
@@ -962,7 +1017,6 @@ async def upload_file(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    from fastapi import UploadFile
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
@@ -972,7 +1026,9 @@ async def upload_file(
     up = form.get("file")
     require(up is not None, "فایل ارسال نشد", 400)
 
-    if isinstance(up, UploadFile) and up.filename:
+    # NOTE: request.form() returns a Starlette UploadFile instance (not FastAPI's subclass).
+    # Rely on duck-typing instead of isinstance() to avoid false negatives.
+    if getattr(up, "filename", None) and hasattr(up, "read"):
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         ext = os.path.splitext(up.filename)[1]
         fname = f"report_{report_id}_{uuid.uuid4().hex}{ext}"

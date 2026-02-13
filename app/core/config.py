@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_PASSWORD: str = "admin123"
     DEFAULT_ADMIN_FULL_NAME: str = "Dev Admin"
 
+    # SAMPLE DATA (for local testing)
+    AUTO_SEED_SAMPLE: bool = False
+    SAMPLE_SEED_PASSWORD: str = "123"
+
     def cors_origins(self) -> list[str]:
         s = (self.CORS_ALLOW_ORIGINS or "").strip()
         if not s or s == "*":

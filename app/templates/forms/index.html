@@ -18,7 +18,7 @@
         <label class="form-label">شهرستان (اختیاری)</label>
         <select name="county_id" class="form-select">
           <option value="">همه شهرستان‌ها</option>
-          {% if user.role.value == 'org_prov_expert' %}
+          {% if user.role.value == 'secretariat_admin' %}
             <option value="province">استان</option>
           {% endif %}
           {% for c in counties %}
@@ -83,13 +83,11 @@
     <table class="table table-sm align-middle">
       <thead>
   <tr>
-    <th>کلید (English)</th>
-    <th>برچسب</th>
-    <th>نوع</th>
-    <th>الزامی</th>
-    <th>regex</th>
-    <th>options</th>
-    <th></th>
+    <th style="width:70px">#</th>
+    <th>عنوان</th>
+    <th>ارگان</th>
+    <th>حوزه</th>
+    <th style="width:140px"></th>
   </tr>
 </thead>
 

@@ -90,6 +90,16 @@ def main() -> int:
                 db.commit()
         finally:
             db.close()
+    # Seed sample dataset (idempotent)
+    if settings.AUTO_SEED_SAMPLE:
+        from app.scripts.seed_sample import seed_sample
+
+        db2: Session = SessionLocal()
+        try:
+            seed_sample(db2)
+            db2.commit()
+        finally:
+            db2.close()
 
     return 0
 
