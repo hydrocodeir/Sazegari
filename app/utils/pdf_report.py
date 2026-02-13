@@ -253,9 +253,26 @@ def build_report_pdf(
     from io import BytesIO
     buff = BytesIO()
 
+    meta_doc = doc.get("meta") if isinstance(doc, dict) else None
+    meta_doc = meta_doc if isinstance(meta_doc, dict) else {}
+
+    default_title = "گزارش رسمی سازگاری با کم‌آبی"
+    default_subtitle = ""
+    # Subtitle suggestion based on report kind/org/county
+    try:
+        kind_label = getattr(report, "kind_label", "") or getattr(getattr(report, "kind", None), "value", "")
+    except Exception:
+        kind_label = ""
+    if org_name and county_name:
+        default_subtitle = f"{kind_label} | {org_name} - {county_name}"
+    elif org_name:
+        default_subtitle = f"{kind_label} | {org_name}"
+    else:
+        default_subtitle = kind_label or ""
+
     meta = {
-        "title": "گزارش رسمی سازگاری با کم‌آبی",
-        "subtitle": "استان / دبیرخانه مرکزی",
+        "title": meta_doc.get("title") or default_title,
+        "subtitle": meta_doc.get("subtitle") or default_subtitle or "سامانه جمع‌آوری داده و گزارش‌دهی",
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "report_no": f"Report #{getattr(report,'id', '')}",
         "font": font_name,
@@ -272,13 +289,13 @@ def build_report_pdf(
     )
 
     story: list[Any] = []
-    story.append(Paragraph(rtl("گزارش سازگاری با کم‌آبی"), h1))
+    story.append(Paragraph(rtl(meta.get("title") or "گزارش سازگاری با کم‌آبی"), h1))
     story.append(Spacer(1, 6))
 
     # Meta table
     meta_rows = []
     meta_rows.append([rtl("شماره گزارش"), rtl(str(getattr(report, "id", "")))])
-    meta_rows.append([rtl("وضعیت"), rtl(getattr(getattr(report, "status", None), "value", ""))])
+    meta_rows.append([rtl("وضعیت"), rtl(getattr(report, "status_label", "") or getattr(getattr(report, "status", None), "value", ""))])
     if owner_name:
         meta_rows.append([rtl("در صف"), rtl(owner_name)])
     if org_name:

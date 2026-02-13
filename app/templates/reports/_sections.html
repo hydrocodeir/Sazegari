@@ -11,8 +11,8 @@
     {% set sub = (subs | selectattr("id","equalto", sid) | list | first) %}
     {% if sub %}
       {% set fmeta = forms_meta.get(sub.form_id|string, {}) %}
-      <div class="card p-3 border-0 shadow-sm mb-3" data-sid="{{ sub.id }}">
-        <div class="d-flex justify-content-between align-items-center">
+      <div class="card border-0 shadow-sm mb-3 hover-lift" data-sid="{{ sub.id }}">
+        <div class="p-3 d-flex justify-content-between align-items-start gap-2">
           <div class="d-flex align-items-center gap-2">
             {% if can_edit %}
               <span class="drag-handle text-muted" style="cursor:grab" title="جابجایی">
@@ -21,56 +21,65 @@
             {% endif %}
             <div>
               <div class="h6 m-0">{{ fmeta.title or sub.form_title }}</div>
-              <div class="text-muted small">Submission #{{ sub.id }}</div>
+              <div class="text-muted small">ثبت #{{ sub.id }} • {{ (sub.created_at.strftime('%Y-%m-%d %H:%M') if sub.created_at else '') }}</div>
             </div>
           </div>
 
-          <div class="d-flex gap-2 align-items-center">
-            <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ sub.id }}">مشاهده ثبت</a>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ sub.id }}"><i class="bi bi-box-arrow-up-left me-1"></i>مشاهده ثبت</a>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleSectionBody({{ sub.id }})"><i class="bi bi-chevron-down me-1"></i>جزئیات</button>
             {% if can_edit %}
-              <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeSection({{ sub.id }})">حذف</button>
+              <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeSection({{ sub.id }})"><i class="bi bi-x-circle me-1"></i>حذف</button>
             {% endif %}
           </div>
         </div>
 
-        {% if can_edit %}
-          <hr>
-          <div class="small text-muted mb-2">توضیحات این بخش</div>
-          <div id="secEditor_{{ sub.id }}" class="border rounded-3"></div>
-          <input type="hidden" id="secHtml_{{ sub.id }}" value="{{ sec.description_html | e }}">
-          <div class="mt-2">
-            <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})">ذخیره توضیحات</button>
-          </div>
-        {% else %}
-          {% if sec.description_html %}
-            <hr>
-            <div class="small text-muted">توضیحات</div>
-            <div class="mt-2">{{ sec.description_html | safe }}</div>
-          {% endif %}
-        {% endif %}
+        <div class="section-body" id="secBody_{{ sub.id }}">
+          <div class="px-3 pb-3">
+            {% if can_edit %}
+              <div class="bg-body-tertiary rounded-4 p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div class="small text-muted">توضیحات این بخش (در PDF نمایش داده می‌شود)</div>
+                  <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})"><i class="bi bi-save me-1"></i>ذخیره</button>
+                </div>
+                <div class="mt-2">
+                  <div id="secEditor_{{ sub.id }}" class="border rounded-4"></div>
+                  <input type="hidden" id="secHtml_{{ sub.id }}" value="{{ sec.description_html | e }}">
+                </div>
+              </div>
+              <hr class="my-3">
+            {% else %}
+              {% if sec.description_html %}
+                <div class="bg-body-tertiary rounded-4 p-3 mb-3">
+                  <div class="small text-muted">توضیحات</div>
+                  <div class="mt-2">{{ sec.description_html | safe }}</div>
+                </div>
+              {% endif %}
+            {% endif %}
 
-        <hr>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
-            <tbody>
-              {% for k,v in (sub.payload or {}).items() %}
-                {% set label = (fmeta.labels.get(k) if fmeta.labels else k) %}
-                <tr>
-                  <td class="text-muted small">{{ label }}</td>
-                  <td>
-                    {% if v is mapping and v.path %}
-                      <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
-                    {% elif v is sequence and (v is not string) %}
-                      {{ v|join(", ") }}
-                    {% else %}
-                      {{ v }}
-                    {% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead><tr><th style="width:35%">عنوان</th><th>مقدار</th></tr></thead>
+                <tbody>
+                  {% for k,v in (sub.payload or {}).items() %}
+                    {% set label = (fmeta.labels.get(k) if fmeta.labels else k) %}
+                    <tr>
+                      <td class="text-muted small">{{ label }}</td>
+                      <td>
+                        {% if v is mapping and v.path %}
+                          <a href="/{{ v.path }}" target="_blank">{{ v.filename or "file" }}</a>
+                        {% elif v is sequence and (v is not string) %}
+                          {{ v|join(", ") }}
+                        {% else %}
+                          {{ v }}
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     {% endif %}

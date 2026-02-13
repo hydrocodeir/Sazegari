@@ -3,22 +3,56 @@
 {% block content %}
 <div class="row g-3">
   <div class="col-12">
-    <div class="card p-3 border-0 shadow-sm">
-      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-        <div>
-          <div class="h5 m-0">گزارش #{{ report.id }}</div>
-          <div class="text-muted small">
-            نوع: <span class="badge text-bg-info">{{ report.kind.value }}</span> |
-            وضعیت: <span class="badge text-bg-secondary">{{ report.status.value }}</span>
-            {% if report.current_owner_id %} | در صف: <span class="badge text-bg-warning">{{ owner_name }}</span>{% endif %}
+    <div class="card p-3 report-hero hover-lift border-0">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
+        <div class="flex-grow-1">
+          {% if can_edit %}
+            <div class="row g-2">
+              <div class="col-lg-7">
+                <label class="form-label small text-muted mb-1">عنوان گزارش (اختیاری)</label>
+                <input id="metaTitle" class="form-control" placeholder="مثلاً: گزارش جامع استانی سازگاری با کم‌آبی" value="{{ doc.meta.title }}">
+              </div>
+              <div class="col-lg-5">
+                <label class="form-label small text-muted mb-1">زیرعنوان (اختیاری)</label>
+                <input id="metaSubtitle" class="form-control" placeholder="مثلاً: سال ۱۴۰۴ / ارگان ..." value="{{ doc.meta.subtitle }}">
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+              <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveMeta()">
+                <i class="bi bi-check2-circle me-1"></i>
+                ذخیره عنوان
+              </button>
+              <span id="metaSaveState" class="text-muted small">&nbsp;</span>
+            </div>
+          {% else %}
+            <div class="h5 m-0">{{ doc.meta.title or ("گزارش #" ~ report.id) }}</div>
+            {% if doc.meta.subtitle %}<div class="text-muted small mt-1">{{ doc.meta.subtitle }}</div>{% endif %}
+          {% endif %}
+
+          <div class="text-muted small mt-2">
+            نوع: <span class="badge text-bg-info">{{ report.kind_label }}</span>
+            <span class="mx-1">|</span>
+            وضعیت: <span class="badge" id="statusBadge">{{ report.status_label }}</span>
+            {% if report.current_owner_id %}<span class="mx-1">|</span> در صف: <span class="badge text-bg-warning">{{ owner_name }}</span>{% endif %}
+          </div>
+
+          <div class="report-stepper mt-3" id="reportStepper">
+            <div class="report-step" data-step="meta"><i class="bi bi-ui-checks"></i> عنوان</div>
+            <div class="report-step" data-step="intro"><i class="bi bi-card-text"></i> مقدمه</div>
+            <div class="report-step" data-step="sections"><i class="bi bi-table"></i> فرم‌ها</div>
+            <div class="report-step" data-step="conclusion"><i class="bi bi-flag"></i> نتیجه‌گیری</div>
           </div>
         </div>
-        <div class="d-flex gap-2">
-          <a class="btn btn-outline-secondary btn-sm" href="/reports">بازگشت</a>
-          <a class="btn btn-outline-primary btn-sm" href="/reports/{{ report.id }}/pdf">دانلود PDF</a>
+
+        <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+          <a class="btn btn-outline-secondary btn-sm" href="/reports"><i class="bi bi-arrow-right me-1"></i>بازگشت</a>
+          <a class="btn btn-outline-primary btn-sm" href="/reports/{{ report.id }}/pdf"><i class="bi bi-file-earmark-pdf me-1"></i>دانلود PDF</a>
+          {% if can_edit %}
+            <button class="btn btn-primary btn-sm" type="button" onclick="saveAll()"><i class="bi bi-cloud-check me-1"></i>ذخیره همه</button>
+          {% endif %}
           {% if user.role.value in ['org_county_expert','org_prov_expert'] and report.current_owner_id == user.id and report.status.value != 'final_approved' %}
-            <form method="post" action="/reports/{{ report.id }}/delete" onsubmit="return confirm('این گزارش حذف می‌شود. ادامه می‌دهید؟')">
-              <button class="btn btn-outline-danger btn-sm" type="submit">حذف گزارش</button>
+            <form method="post" action="/reports/{{ report.id }}/delete" onsubmit="return confirm('این گزارش حذف می‌شود. ادامه می‌دهید؟')" class="m-0">
+              <button class="btn btn-outline-danger btn-sm" type="submit"><i class="bi bi-trash me-1"></i>حذف</button>
             </form>
           {% endif %}
         </div>
@@ -30,23 +64,56 @@
   <div class="col-lg-8">
 
     <!-- 1) Intro -->
-    <div class="card p-3 border-0 shadow-sm mb-3">
-      <div class="d-flex justify-content-between align-items-center">
-        <div class="h6 m-0">۱) متن ابتدایی / پیوست</div>
+    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="h6 m-0">۱) مقدمه و پیوست‌ها</div>
+          <div class="text-muted small mt-1">این متن در ابتدای گزارش PDF قرار می‌گیرد؛ فایل‌ها هم به‌صورت لینک در متن و همچنین در لیست پیوست‌ها ذخیره می‌شوند.</div>
+        </div>
         {% if can_edit %}
-          <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveIntro()">ذخیره متن ابتدایی</button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveIntro({silent:false})">ذخیره</button>
+          </div>
         {% endif %}
       </div>
 
       {% if can_edit %}
-        <div id="introEditor" class="mt-3"></div>
+        <div class="editor-shell mt-3">
+          <div class="editor-meta">
+            <div class="d-flex gap-2 align-items-center">
+              <span class="fw-semibold">متن ابتدایی</span>
+              <span class="muted" id="introWordCount"></span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <span class="muted" id="introSaveState">&nbsp;</span>
+              <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-secondary" type="button" onclick="insertTemplate('intro','standard')">قالب استاندارد</button>
+                <button class="btn btn-outline-secondary" type="button" onclick="insertTemplate('intro','minimal')">قالب کوتاه</button>
+              </div>
+            </div>
+          </div>
+          <div id="introEditor"></div>
+        </div>
         <input type="hidden" id="intro_html" value="{{ doc.intro_html | e }}">
-        <div class="d-flex gap-2 mt-3 align-items-center">
-          <form id="uploadForm" class="d-flex gap-2 align-items-center" onsubmit="return uploadReportFile(event)">
-            <input class="form-control form-control-sm" type="file" id="reportFile" required />
-            <button class="btn btn-sm btn-outline-secondary" type="submit">آپلود فایل</button>
-          </form>
-          <div class="text-muted small">پس از آپلود، لینک فایل داخل متن درج می‌شود و در بخش «پیوست‌ها» هم ذخیره می‌شود.</div>
+
+        <div class="dropzone mt-3" id="reportDropzone" tabindex="0">
+          <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-cloud-arrow-up fs-4"></i>
+              <div>
+                <div class="fw-semibold">آپلود فایل</div>
+                <div class="text-muted small">فایل را اینجا رها کن یا انتخاب کن. پس از آپلود، لینک آن داخل متن درج می‌شود.</div>
+              </div>
+            </div>
+            <div class="ms-md-auto d-flex gap-2 align-items-center">
+              <input class="d-none" type="file" id="reportFile" />
+              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="pickUploadFile()">انتخاب فایل</button>
+              <button class="btn btn-sm btn-outline-primary" id="uploadBtn" type="button" onclick="uploadSelectedFile()">
+                <span id="uploadBtnText">آپلود</span>
+                <span id="uploadSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
         </div>
       {% else %}
         <div class="mt-2">{{ doc.intro_html | safe }}</div>
@@ -54,16 +121,21 @@
     </div>
 
     <!-- Attachments -->
-    <div class="card p-3 border-0 shadow-sm mb-3" id="fileAttachmentsBox">
+    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift" id="fileAttachmentsBox">
       {% include "reports/_attachments_files.html" %}
     </div>
 
     <!-- 2) Sections -->
-    <div class="card p-3 border-0 shadow-sm mb-3">
-      <div class="d-flex justify-content-between align-items-center">
-        <div class="h6 m-0">۲) فرم‌های انتخابی و جداول</div>
+    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="h6 m-0">۲) فرم‌های انتخابی و جداول</div>
+          {% if can_edit %}
+            <div class="text-muted small mt-1">فرم و ثبت را انتخاب کن، به گزارش اضافه کن و (در صورت نیاز) توضیح بنویس. می‌توانی ترتیب فرم‌ها را با Drag & Drop تغییر بدهی.</div>
+          {% endif %}
+        </div>
         {% if can_edit %}
-          <div class="text-muted small">فرم/ثبت را انتخاب کن و به گزارش اضافه کن.</div>
+          <button class="btn btn-sm btn-outline-primary" type="button" onclick="toggleAllSections()"><i class="bi bi-arrows-collapse me-1"></i>جمع/باز</button>
         {% endif %}
       </div>
 
@@ -74,7 +146,7 @@
         {% else %}
         <form hx-post="/reports/{{ report.id }}/sections/add" hx-target="#sectionsBox" hx-swap="innerHTML" class="row g-2 align-items-end">
           <div class="col-md-4">
-            <label class="form-label small text-muted">1) انتخاب فرم</label>
+            <label class="form-label small text-muted">۱) انتخاب فرم</label>
             <select name="form_id" class="form-select form-select-sm"
                     hx-get="/reports/{{ report.id }}/sections/submission-options"
                     hx-trigger="load, change"
@@ -86,7 +158,7 @@
             </select>
           </div>
           <div class="col-md-5">
-            <label class="form-label small text-muted">2) انتخاب ثبت از همان فرم</label>
+            <label class="form-label small text-muted">۲) انتخاب ثبت</label>
             <select id="submissionSelect" name="submission_id" class="form-select form-select-sm" required>
               <option value="">ابتدا فرم را انتخاب کنید…</option>
             </select>
@@ -104,16 +176,34 @@
     </div>
 
     <!-- 3) Conclusion -->
-    <div class="card p-3 border-0 shadow-sm">
-      <div class="d-flex justify-content-between align-items-center">
-        <div class="h6 m-0">۳) نتیجه‌گیری و نتایج</div>
+    <div class="card p-3 border-0 shadow-sm hover-lift">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="h6 m-0">۳) نتیجه‌گیری و نتایج</div>
+          <div class="text-muted small mt-1">خلاصه‌ی برداشت‌ها، پیشنهادها، و نکات نهایی را اینجا اضافه کن.</div>
+        </div>
         {% if can_edit %}
-          <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveConclusion()">ذخیره نتیجه‌گیری</button>
+          <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveConclusion({silent:false})">ذخیره</button>
         {% endif %}
       </div>
 
       {% if can_edit %}
-        <div id="conclusionEditor" class="mt-3"></div>
+        <div class="editor-shell mt-3">
+          <div class="editor-meta">
+            <div class="d-flex gap-2 align-items-center">
+              <span class="fw-semibold">متن نتیجه‌گیری</span>
+              <span class="muted" id="conclusionWordCount"></span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <span class="muted" id="conclusionSaveState">&nbsp;</span>
+              <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-secondary" type="button" onclick="insertTemplate('conclusion','standard')">قالب استاندارد</button>
+                <button class="btn btn-outline-secondary" type="button" onclick="insertTemplate('conclusion','minimal')">قالب کوتاه</button>
+              </div>
+            </div>
+          </div>
+          <div id="conclusionEditor"></div>
+        </div>
         <input type="hidden" id="conclusion_html" value="{{ doc.conclusion_html | e }}">
       {% else %}
         <div class="mt-2">{{ doc.conclusion_html | safe }}</div>
@@ -123,15 +213,15 @@
 
   <!-- Right: Workflow/History -->
   <div class="col-lg-4">
-    <div class="card p-3 border-0 shadow-sm mb-3" id="actionsBox">
+    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift" id="actionsBox">
       {% include "reports/_actions.html" %}
     </div>
 
-    <div class="card p-3 border-0 shadow-sm">
+    <div class="card p-3 border-0 shadow-sm hover-lift">
       <h6 class="mb-3">تاریخچه گردش‌کار</h6>
       <div class="table-responsive">
         <table class="table table-sm align-middle">
-          <thead><tr><th>#</th><th>action</th><th>from</th><th>to</th><th>actor</th></tr></thead>
+          <thead><tr><th>#</th><th>اقدام</th><th>از</th><th>به</th><th>انجام‌دهنده</th></tr></thead>
           <tbody>
             {% for l in logs %}
               <tr>
@@ -147,7 +237,7 @@
       </div>
     </div>
 
-    <div class="card p-3 border-0 shadow-sm mt-3">
+    <div class="card p-3 border-0 shadow-sm mt-3 hover-lift">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="m-0">لاگ تغییرات محتوا</h6>
         <div class="text-muted small">(ReportAuditLog)</div>
@@ -161,9 +251,9 @@
             <thead>
               <tr>
                 <th>#</th>
-                <th>action</th>
-                <th>field</th>
-                <th>actor</th>
+                <th>اقدام</th>
+                <th>فیلد</th>
+                <th>کاربر</th>
               </tr>
             </thead>
             <tbody>
@@ -211,19 +301,44 @@
 <link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
 <script>
 let quillIntro = null;
 let quillConclusion = null;
 let quillSections = {};
 let sortable = null;
+let sectionsCollapsed = false;
+
+let dirtyIntro = false;
+let dirtyConclusion = false;
+let dirtyMeta = false;
+let autoSaveTimers = {intro: null, conclusion: null, meta: null};
+
+function setStatusBadge(){
+  const badge = document.getElementById('statusBadge');
+  if(!badge) return;
+  const v = '{{ report.status.value }}';
+  let cls = 'text-bg-secondary';
+  if(v === 'needs_revision') cls = 'text-bg-warning';
+  if(v === 'final_approved') cls = 'text-bg-success';
+  if(v.endsWith('_review')) cls = 'text-bg-info';
+  badge.classList.add('badge', cls);
+}
 
 function makeQuill(elId, initialHtml){
-  const q = new Quill("#"+elId, { theme: "snow", modules: { toolbar: [
-    ["bold","italic","underline"],
-    [{"list":"ordered"},{"list":"bullet"}],
-    ["link"],
-    ["clean"]
-  ]}});
+  const q = new Quill("#"+elId, {
+    theme: "snow",
+    modules: {
+      toolbar: [
+        [{"header":[1,2,3,false]}],
+        ["bold","italic","underline"],
+        [{"list":"ordered"},{"list":"bullet"}],
+        [{"align":[]}],
+        ["link"],
+        ["clean"]
+      ]
+    }
+  });
   q.root.innerHTML = initialHtml || "";
   return q;
 }
@@ -234,6 +349,9 @@ function initSectionEditors(){
     const sid = ed.id.replace("secEditor_","");
     const init = document.getElementById("secHtml_"+sid)?.value || "";
     quillSections[sid] = makeQuill(ed.id, init);
+    quillSections[sid].on('text-change', ()=>{
+      setTimeout(()=>updateStepper(), 0);
+    });
   });
 }
 
@@ -253,45 +371,103 @@ function initSortable(){
       document.getElementById("sectionsBox").innerHTML = htmlOut;
       initSectionEditors();
       initSortable();
+      updateStepper();
     }
   });
 }
 
-document.addEventListener("DOMContentLoaded", ()=>{
-  {% if can_edit %}
-    quillIntro = makeQuill("introEditor", document.getElementById("intro_html").value);
-    quillConclusion = makeQuill("conclusionEditor", document.getElementById("conclusion_html").value);
-    initSectionEditors();
-    initSortable();
-  {% endif %}
-});
-
-// Re-init after HTMX swap (add section / remove etc.)
-document.body.addEventListener("htmx:afterSwap", (e)=>{
-  if(e.target && e.target.id === "sectionsBox"){
-    {% if can_edit %}
-      initSectionEditors();
-      initSortable();
-    {% endif %}
-  }
-});
-
-async function saveIntro(){
-  const html = quillIntro.root.innerHTML;
-  const fd = new FormData();
-  fd.append("note_html", html);
-  const res = await fetch(`/reports/{{ report.id }}/update_note`, {method:"POST", body: fd});
-  if(res.ok) showToast("ذخیره شد","success");
-  else showToast("خطا در ذخیره","danger");
+function updateWordCount(which){
+  try{
+    let q = which === 'intro' ? quillIntro : quillConclusion;
+    const el = document.getElementById(which + 'WordCount');
+    if(!q || !el) return;
+    const t = (q.getText() || '').trim();
+    const words = t ? t.split(/\s+/).filter(Boolean).length : 0;
+    const chars = t.length;
+    el.textContent = `— ${words} واژه / ${chars} کاراکتر`;
+  }catch(e){}
 }
 
-async function saveConclusion(){
+function setSaveState(which, text){
+  const el = document.getElementById(which + 'SaveState');
+  if(el) el.textContent = text || '';
+}
+
+function debounceAutoSave(which, fn, delay=1500){
+  if(autoSaveTimers[which]) clearTimeout(autoSaveTimers[which]);
+  autoSaveTimers[which] = setTimeout(fn, delay);
+}
+
+function insertTemplate(target, kind){
+  const q = target === 'intro' ? quillIntro : quillConclusion;
+  if(!q) return;
+
+  const templates = {
+    standard: `<p><b>هدف گزارش</b></p><p>در این قسمت، هدف و دامنه زمانی/مکانی گزارش را توضیح دهید.</p><p><b>وضعیت کلی</b></p><p>جمع‌بندی کوتاه از وضعیت شاخص‌ها و یافته‌های مهم.</p><p><b>چالش‌ها و نکات کلیدی</b></p><ul><li>چالش/نکته شماره ۱ ...</li><li>چالش/نکته شماره ۲ ...</li></ul>`,
+    minimal: `<p><b>خلاصه</b></p><ul><li>نکته ۱ ...</li><li>نکته ۲ ...</li></ul>`
+  };
+
+  const html = templates[kind] || '';
+  q.root.innerHTML = html;
+  if(target === 'intro') dirtyIntro = true;
+  else dirtyConclusion = true;
+  updateWordCount(target);
+  updateStepper();
+}
+
+async function saveMeta(opts={silent:false}){
+  const title = document.getElementById('metaTitle')?.value || '';
+  const subtitle = document.getElementById('metaSubtitle')?.value || '';
+  const fd = new FormData();
+  fd.append('title', title);
+  fd.append('subtitle', subtitle);
+  setSaveState('meta', 'در حال ذخیره...');
+  const res = await fetch(`/reports/{{ report.id }}/update_meta`, {method:'POST', body: fd});
+  if(res.ok){
+    dirtyMeta = false;
+    document.getElementById('metaSaveState').textContent = 'ذخیره شد ✓';
+    if(!opts.silent) showToast('عنوان ذخیره شد','success');
+    updateStepper();
+  }else{
+    document.getElementById('metaSaveState').textContent = 'خطا در ذخیره';
+    if(!opts.silent) showToast('خطا در ذخیره عنوان','danger');
+  }
+}
+
+async function saveIntro(opts={silent:true}){
+  if(!quillIntro) return;
+  const html = quillIntro.root.innerHTML;
+  const fd = new FormData();
+  fd.append('note_html', html);
+  setSaveState('intro', 'در حال ذخیره...');
+  const res = await fetch(`/reports/{{ report.id }}/update_note`, {method:'POST', body: fd});
+  if(res.ok){
+    dirtyIntro = false;
+    setSaveState('intro', 'ذخیره شد ✓');
+    if(!opts.silent) showToast('ذخیره شد','success');
+    updateStepper();
+  }else{
+    setSaveState('intro', 'خطا در ذخیره');
+    if(!opts.silent) showToast('خطا در ذخیره','danger');
+  }
+}
+
+async function saveConclusion(opts={silent:true}){
+  if(!quillConclusion) return;
   const html = quillConclusion.root.innerHTML;
   const fd = new FormData();
-  fd.append("conclusion_html", html);
-  const res = await fetch(`/reports/{{ report.id }}/update_conclusion`, {method:"POST", body: fd});
-  if(res.ok) showToast("ذخیره شد","success");
-  else showToast("خطا در ذخیره","danger");
+  fd.append('conclusion_html', html);
+  setSaveState('conclusion', 'در حال ذخیره...');
+  const res = await fetch(`/reports/{{ report.id }}/update_conclusion`, {method:'POST', body: fd});
+  if(res.ok){
+    dirtyConclusion = false;
+    setSaveState('conclusion', 'ذخیره شد ✓');
+    if(!opts.silent) showToast('ذخیره شد','success');
+    updateStepper();
+  }else{
+    setSaveState('conclusion', 'خطا در ذخیره');
+    if(!opts.silent) showToast('خطا در ذخیره','danger');
+  }
 }
 
 async function saveSectionDesc(submissionId){
@@ -299,55 +475,203 @@ async function saveSectionDesc(submissionId){
   if(!q) return;
   const html = q.root.innerHTML;
   const fd = new FormData();
-  fd.append("submission_id", submissionId);
-  fd.append("description_html", html);
-  const res = await fetch(`/reports/{{ report.id }}/sections/update`, {method:"POST", body: fd});
+  fd.append('submission_id', submissionId);
+  fd.append('description_html', html);
+  const res = await fetch(`/reports/{{ report.id }}/sections/update`, {method:'POST', body: fd});
   const htmlOut = await res.text();
-  document.getElementById("sectionsBox").innerHTML = htmlOut;
+  document.getElementById('sectionsBox').innerHTML = htmlOut;
   initSectionEditors();
   initSortable();
+  updateStepper();
+  showToast('توضیحات ذخیره شد','success');
 }
 
 async function removeSection(submissionId){
-  if(!confirm("این فرم از گزارش حذف شود؟")) return;
+  if(!confirm('این فرم از گزارش حذف شود؟')) return;
   const fd = new FormData();
-  fd.append("submission_id", submissionId);
-  const res = await fetch(`/reports/{{ report.id }}/sections/remove`, {method:"POST", body: fd});
+  fd.append('submission_id', submissionId);
+  const res = await fetch(`/reports/{{ report.id }}/sections/remove`, {method:'POST', body: fd});
   const htmlOut = await res.text();
-  document.getElementById("sectionsBox").innerHTML = htmlOut;
+  document.getElementById('sectionsBox').innerHTML = htmlOut;
   initSectionEditors();
   initSortable();
+  updateStepper();
 }
 
-async function uploadReportFile(ev){
-  ev.preventDefault();
-  const input = document.getElementById("reportFile");
-  if(!input || !input.files || !input.files[0]) return false;
+function pickUploadFile(){
+  document.getElementById('reportFile')?.click();
+}
+
+async function uploadSelectedFile(fileOverride=null){
+  const input = document.getElementById('reportFile');
+  const file = fileOverride || (input && input.files ? input.files[0] : null);
+  if(!file){ showToast('ابتدا فایل را انتخاب کنید','warning'); return; }
+
+  const btn = document.getElementById('uploadBtn');
+  const sp = document.getElementById('uploadSpinner');
+  const tx = document.getElementById('uploadBtnText');
+  if(btn){ btn.disabled = true; }
+  if(sp){ sp.classList.remove('d-none'); }
+  if(tx){ tx.textContent = 'در حال آپلود...'; }
 
   const fd = new FormData();
-  fd.append("file", input.files[0]);
-  const res = await fetch(`/reports/{{ report.id }}/upload`, {method:"POST", body: fd});
-  if(!res.ok){ showToast("آپلود ناموفق","danger"); return false; }
+  fd.append('file', file);
+  const res = await fetch(`/reports/{{ report.id }}/upload`, {method:'POST', body: fd});
+
+  if(btn){ btn.disabled = false; }
+  if(sp){ sp.classList.add('d-none'); }
+  if(tx){ tx.textContent = 'آپلود'; }
+
+  if(!res.ok){ showToast('آپلود ناموفق','danger'); return; }
   const data = await res.json();
   const url = data.url;
-  const name = data.name || "file";
+  const name = data.name || 'file';
 
   // insert link in intro editor
   const range = quillIntro.getSelection(true);
-  quillIntro.insertText(range.index, name, "link", url);
-  quillIntro.insertText(range.index + name.length, " ");
+  quillIntro.insertText(range.index, name, 'link', url);
+  quillIntro.insertText(range.index + name.length, ' ');
+  dirtyIntro = true;
+  debounceAutoSave('intro', ()=>saveIntro({silent:true}), 1200);
 
   // refresh attachments list without full reload
   try{
     const res2 = await fetch(`/reports/{{ report.id }}/attachments/partial`);
     if(res2.ok){
-      const box = document.getElementById("fileAttachmentsBox");
+      const box = document.getElementById('fileAttachmentsBox');
       box.innerHTML = await res2.text();
       if(window.htmx){ htmx.process(box); }
     }
   }catch(e){}
-  showToast("فایل اضافه شد","success");
-  return false;
+
+  showToast('فایل اضافه شد','success');
+  if(input) input.value = '';
+  // if fileOverride used, nothing else to reset
 }
+
+function enableDropzone(){
+  const dz = document.getElementById('reportDropzone');
+  const input = document.getElementById('reportFile');
+  if(!dz || !input) return;
+
+  const prevent = (e)=>{ e.preventDefault(); e.stopPropagation(); };
+  ['dragenter','dragover','dragleave','drop'].forEach(evt=>{
+    dz.addEventListener(evt, prevent);
+  });
+  dz.addEventListener('dragover', ()=>dz.classList.add('dragover'));
+  dz.addEventListener('dragleave', ()=>dz.classList.remove('dragover'));
+  dz.addEventListener('drop', (e)=>{
+    dz.classList.remove('dragover');
+    const files = e.dataTransfer?.files;
+    if(files && files.length){
+      uploadSelectedFile(files[0]);
+    }
+  });
+
+  dz.addEventListener('click', ()=>pickUploadFile());
+  dz.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' '){ pickUploadFile(); } });
+}
+
+function updateStepper(){
+  const steps = document.querySelectorAll('#reportStepper .report-step');
+  const metaTitle = (document.getElementById('metaTitle')?.value || '').trim();
+  const metaSubtitle = (document.getElementById('metaSubtitle')?.value || '').trim();
+  const metaDone = (metaTitle.length + metaSubtitle.length) > 0;
+
+  const introDone = quillIntro ? (quillIntro.getText() || '').trim().length > 0 : false;
+  const conclusionDone = quillConclusion ? (quillConclusion.getText() || '').trim().length > 0 : false;
+  const hasSections = document.querySelectorAll('#sectionsContainer [data-sid]').length > 0;
+
+  const doneMap = {meta: metaDone, intro: introDone, sections: hasSections, conclusion: conclusionDone};
+  steps.forEach(s=>{
+    const key = s.getAttribute('data-step');
+    if(doneMap[key]) s.classList.add('done');
+    else s.classList.remove('done');
+  });
+}
+
+function toggleSectionBody(sid){
+  const body = document.getElementById('secBody_'+sid);
+  if(!body) return;
+  body.classList.toggle('d-none');
+}
+
+function toggleAllSections(){
+  sectionsCollapsed = !sectionsCollapsed;
+  document.querySelectorAll('#sectionsContainer .section-body').forEach(body=>{
+    if(sectionsCollapsed) body.classList.add('d-none');
+    else body.classList.remove('d-none');
+  });
+}
+
+async function saveAll(){
+  if(!{{ 'true' if can_edit else 'false' }}) return;
+  const tasks = [];
+  if(document.getElementById('metaTitle') || document.getElementById('metaSubtitle')) tasks.push(saveMeta({silent:true}));
+  tasks.push(saveIntro({silent:true}));
+  tasks.push(saveConclusion({silent:true}));
+  try{ await Promise.all(tasks); showToast('همه بخش‌ها ذخیره شد','success'); }catch(e){ showToast('خطا در ذخیره برخی بخش‌ها','danger'); }
+}
+
+function attachAutoSave(){
+  const t = document.getElementById('metaTitle');
+  const s = document.getElementById('metaSubtitle');
+  if(t) t.addEventListener('input', ()=>{ dirtyMeta = true; document.getElementById('metaSaveState').textContent = 'در انتظار ذخیره...'; debounceAutoSave('meta', ()=>saveMeta({silent:true}), 1400); updateStepper(); });
+  if(s) s.addEventListener('input', ()=>{ dirtyMeta = true; document.getElementById('metaSaveState').textContent = 'در انتظار ذخیره...'; debounceAutoSave('meta', ()=>saveMeta({silent:true}), 1400); updateStepper(); });
+}
+
+function attachLeaveGuard(){
+  window.addEventListener('beforeunload', (e)=>{
+    if(dirtyIntro || dirtyConclusion || dirtyMeta){
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  setStatusBadge();
+  {% if can_edit %}
+    quillIntro = makeQuill('introEditor', document.getElementById('intro_html').value);
+    quillConclusion = makeQuill('conclusionEditor', document.getElementById('conclusion_html').value);
+    initSectionEditors();
+    initSortable();
+
+    quillIntro.on('text-change', ()=>{
+      dirtyIntro = true;
+      setSaveState('intro', 'در انتظار ذخیره...');
+      updateWordCount('intro');
+      debounceAutoSave('intro', ()=>saveIntro({silent:true}), 1300);
+      updateStepper();
+    });
+
+    quillConclusion.on('text-change', ()=>{
+      dirtyConclusion = true;
+      setSaveState('conclusion', 'در انتظار ذخیره...');
+      updateWordCount('conclusion');
+      debounceAutoSave('conclusion', ()=>saveConclusion({silent:true}), 1300);
+      updateStepper();
+    });
+
+    updateWordCount('intro');
+    updateWordCount('conclusion');
+    attachAutoSave();
+    enableDropzone();
+    attachLeaveGuard();
+    updateStepper();
+  {% endif %}
+});
+
+// Re-init after HTMX swap (add section / remove etc.)
+document.body.addEventListener('htmx:afterSwap', (e)=>{
+  if(e.target && e.target.id === 'sectionsBox'){
+    {% if can_edit %}
+      initSectionEditors();
+      initSortable();
+      updateStepper();
+    {% endif %}
+  }
+});
 </script>
 {% endblock %}

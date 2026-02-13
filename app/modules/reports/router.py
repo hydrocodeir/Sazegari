@@ -255,7 +255,7 @@ def create(
         current_owner_id=user.id,
         status=ReportStatus.DRAFT,
         kind=kind_enum,
-        content_json=dump_doc({"intro_html": "", "conclusion_html": "", "sections": [], "aggregation": {}}),
+        content_json=dump_doc({"intro_html": "", "conclusion_html": "", "meta": {"title": "", "subtitle": ""}, "sections": [], "aggregation": {}}),
         note="",
     )
     db.add(r)
@@ -870,6 +870,36 @@ def update_conclusion(
     doc["conclusion_html"] = conclusion_html or ""
     r.content_json = dump_doc(doc)
     _audit(db, r.id, user.id, action="update", field="conclusion_html", before=before.get("conclusion_html"), after=doc.get("conclusion_html"))
+    db.commit()
+    return {"ok": True}
+
+
+
+@router.post("/{report_id}/update_meta")
+def update_meta(
+    request: Request,
+    report_id: int,
+    title: str = Form(""),
+    subtitle: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان ویرایش گزارش وجود ندارد.")
+
+    before = load_doc(r.content_json)
+    doc = load_doc(r.content_json)
+    meta = doc.get("meta") if isinstance(doc, dict) else None
+    if not isinstance(meta, dict):
+        meta = {"title": "", "subtitle": ""}
+    meta["title"] = (title or "").strip()
+    meta["subtitle"] = (subtitle or "").strip()
+    doc["meta"] = meta
+
+    r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update", field="meta", before=before.get("meta"), after=doc.get("meta"))
     db.commit()
     return {"ok": True}
 
