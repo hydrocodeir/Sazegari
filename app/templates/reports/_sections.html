@@ -43,8 +43,7 @@
                   <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})"><i class="bi bi-save me-1"></i>ذخیره</button>
                 </div>
                 <div class="mt-2">
-                  <div id="secEditor_{{ sub.id }}" class="border rounded-4"></div>
-                  <input type="hidden" id="secHtml_{{ sub.id }}" value="{{ sec.description_html | e }}">
+                  <textarea id="secEditor_{{ sub.id }}" class="rte-textarea">{{ sec.description_html | e }}</textarea>
                 </div>
               </div>
               <hr class="my-3">

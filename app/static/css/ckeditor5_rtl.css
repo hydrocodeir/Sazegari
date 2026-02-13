@@ -1,0 +1,31 @@
+/* CKEditor 5 RTL + Persian typography (Vazirmatn) */
+
+/* Toolbar + UI */
+.ck.ck-toolbar,
+.ck.ck-toolbar__items,
+.ck.ck-dropdown__panel,
+.ck.ck-labeled-field-view__label,
+.ck.ck-input-text,
+.ck.ck-button {
+  direction: rtl;
+}
+
+/* Editable content */
+.ck.ck-editor__main > .ck-editor__editable,
+.ck.ck-editor__editable {
+  direction: rtl;
+  text-align: right;
+  font-family: Vazirmatn, Tahoma, Arial, sans-serif;
+  line-height: 1.9;
+  /* Better default height so the user sees more content while typing */
+  min-height: 260px;
+}
+
+/* Comfortable height defaults */
+.rte-host {
+  min-height: 320px;
+}
+
+.rte-host.rte-small {
+  min-height: 200px;
+}

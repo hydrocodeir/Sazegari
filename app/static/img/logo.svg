@@ -1,5 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40" viewBox="0 0 160 40">
-  <rect x="0" y="0" width="160" height="40" rx="10" fill="#0d6efd"/>
-  <path d="M20 28c6-3 10-9 12-16 2 7 6 13 12 16-6 3-10 1-12-2-2 3-6 5-12 2Z" fill="#fff" opacity="0.9"/>
-  <text x="48" y="26" font-family="Tahoma, Arial" font-size="16" fill="#fff">سازگاری کم‌آبی</text>
+<svg width="1000" height="220" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e3f2fd"/>
+      <stop offset="100%" stop-color="#bbdefb"/>
+    </linearGradient>
+
+    <linearGradient id="dropGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#64b5f6"/>
+      <stop offset="100%" stop-color="#0d47a1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1000" height="220" rx="18" ry="18" fill="url(#bgGrad)"/>
+
+  <!-- Water Drop (Left) -->
+  <path d="
+    M140 40
+    C100 95 85 125 85 150
+    C85 185 110 205 140 205
+    C170 205 195 185 195 150
+    C195 125 180 95 140 40
+    Z"
+    fill="url(#dropGrad)"/>
+
+  <!-- Highlight -->
+  <path d="
+    M140 65
+    C115 105 110 125 110 142
+    C110 160 123 170 140 170
+    "
+    fill="none"
+    stroke="rgba(255,255,255,0.5)"
+    stroke-width="4"
+    stroke-linecap="round"/>
+
+  <!-- Centered Text -->
+  <text x="600" y="80"
+        font-family="Vazir, Tahoma, Arial"
+        font-size="60"
+        font-weight="700"
+        fill="#0d47a1"
+        direction="rtl"
+        text-anchor="middle">
+    داشبورد سازگاری با کم‌آبی
+  </text>
+
+  <text x="600" y="160"
+        font-family="Vazir, Tahoma, Arial"
+        font-size="48"
+        fill="#1565c0"
+        direction="rtl"
+        text-anchor="middle">
+    استان خراسان رضوی
+  </text>
 </svg>

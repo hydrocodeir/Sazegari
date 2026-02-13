@@ -47,9 +47,10 @@ pre { white-space: pre-wrap; word-break: break-word; }
 }
 
 .sidebar-brand{
-  padding: 10px 10px 14px 10px;
+  padding: 10px 10px 10px 10px;
   border-bottom: 1px solid var(--sidebar-border);
   margin-bottom: 10px;
+  text-align: center;
 }
 
 .sidebar-section{
@@ -282,6 +283,32 @@ body{
   direction: rtl;
   text-align: right;
 }
+
+
+/* CKEditor 4 styling (Report RTE) */
+.rte-textarea{ width: 100%; min-height: 180px; }
+.editor-shell .cke_chrome,
+.bg-body-tertiary .cke_chrome{
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.editor-shell .cke_top,
+.bg-body-tertiary .cke_top{
+  border: 0 !important;
+  border-bottom: 1px solid rgba(15,23,42,.08) !important;
+  background: rgba(15,23,42,.03) !important;
+}
+.editor-shell .cke_bottom,
+.bg-body-tertiary .cke_bottom{
+  border: 0 !important;
+  border-top: 1px solid rgba(15,23,42,.08) !important;
+  background: rgba(15,23,42,.02) !important;
+}
+.editor-shell .cke_contents,
+.bg-body-tertiary .cke_contents{
+  border: 0 !important;
+}
+.cke_toolbar_separator{ opacity: .4; }
 
 /* Report page helpers */
 .report-hero{

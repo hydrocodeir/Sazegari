@@ -1,0 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@200;300;400;500;600;700;800&display=swap');
+
+html, body {
+  font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
+  direction: rtl;
+  text-align: right;
+  line-height: 1.9;
+  font-size: 15px;
+}
+
+p{ margin: 0 0 .55rem; }
+ul, ol{ padding-right: 1.25rem; padding-left: 0; }
+li{ margin: .15rem 0; }
+a{ color: #0d6efd; }

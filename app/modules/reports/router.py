@@ -1081,7 +1081,11 @@ async def upload_file(
     require(_can_edit(user, r), "در این وضعیت امکان آپلود وجود ندارد.")
 
     form = await request.form()
-    up = form.get("file")
+    # Be tolerant to different field names from various clients/JS versions.
+    up = form.get("file") or form.get("reportFile") or form.get("upload") or form.get("attachment")
+    # Some clients may send multiple values under the same key.
+    if isinstance(up, (list, tuple)):
+        up = up[0] if up else None
     require(up is not None, "فایل ارسال نشد", 400)
 
     # NOTE: request.form() returns a Starlette UploadFile instance (not FastAPI's subclass).

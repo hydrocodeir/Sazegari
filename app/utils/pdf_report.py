@@ -143,6 +143,248 @@ def html_to_paragraphs(html: str) -> list[str]:
         return lines
 
 
+class _CKHtmlToFlowables(HTMLParser):
+    """HTML -> list of ReportLab Flowables with basic table support.
+
+    This parser is intentionally small and designed for CKEditor/Quill outputs.
+    It supports paragraphs, inline formatting, lists, links, line breaks, and tables.
+
+    CKEditor 5 typically wraps tables with <figure class="table"> ... <table> ...</table>.
+    We ignore the wrapper and convert the actual <table> into a ReportLab Table.
+    """
+
+    def __init__(self, base_style: ParagraphStyle, font_name: str, font_bold: str, max_width_cm: float = 15.0):
+        super().__init__()
+        self.base_style = base_style
+        self.cell_style = ParagraphStyle(name="Cell", parent=base_style)
+        self.cell_style_bold = ParagraphStyle(name="CellBold", parent=base_style, fontName=font_bold)
+        self.font_name = font_name
+        self.font_bold = font_bold
+        self.max_width = max_width_cm * cm
+
+        self.flowables: list[Any] = []
+        self._buf: list[str] = []
+        self._stack: list[str] = []
+        self._pending_prefix: str = ""  # e.g., bullet
+
+        # Table state
+        self._in_table = False
+        self._table_rows: list[list[Paragraph]] = []
+        self._current_row: list[Paragraph] | None = None
+        self._in_cell = False
+        self._cell_buf: list[str] = []
+        self._cell_stack: list[str] = []
+        self._cell_is_header = False
+
+    def _flush_paragraph(self):
+        txt = "".join(self._buf).strip()
+        if txt:
+            if self._pending_prefix:
+                txt = xml_escape(rtl(self._pending_prefix)) + txt
+                self._pending_prefix = ""
+            self.flowables.append(Paragraph(txt, self.base_style))
+            self.flowables.append(Spacer(1, 4))
+        self._buf = []
+
+    def _flush_cell(self):
+        # Convert current cell buffer into a Paragraph
+        txt = "".join(self._cell_buf).strip() or ""
+        style = self.cell_style_bold if self._cell_is_header else self.cell_style
+        para = Paragraph(txt, style) if txt else Paragraph("", style)
+        self._cell_buf = []
+        self._cell_stack = []
+        self._cell_is_header = False
+        return para
+
+    def _finalize_table(self):
+        if not self._table_rows:
+            return
+        cols = max((len(r) for r in self._table_rows), default=0)
+        if cols <= 0:
+            return
+        # Pad rows
+        padded: list[list[Any]] = []
+        for r in self._table_rows:
+            row = list(r)
+            while len(row) < cols:
+                row.append(Paragraph("", self.cell_style))
+            padded.append(row)
+
+        widths = [self.max_width / cols] * cols
+        t = Table(padded, colWidths=widths, hAlign="RIGHT")
+        # Style: header row background if first row includes header cells
+        tstyle = [
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]
+        t.setStyle(TableStyle(tstyle))
+        self.flowables.append(t)
+        self.flowables.append(Spacer(1, 6))
+        self._table_rows = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        tag = (tag or "").lower()
+        attr_map = {k.lower(): (v or "") for k, v in attrs}
+
+        # Block boundaries
+        if tag in ("p", "div", "h1", "h2", "h3", "figure") and not self._in_table:
+            self._flush_paragraph()
+            return
+
+        if tag == "br":
+            (self._cell_buf if self._in_cell else self._buf).append("<br/>")
+            return
+
+        # Table handling
+        if tag == "table":
+            if not self._in_table:
+                self._flush_paragraph()
+                self._in_table = True
+                self._table_rows = []
+            return
+        if self._in_table:
+            if tag == "tr":
+                self._current_row = []
+                return
+            if tag in ("td", "th"):
+                self._in_cell = True
+                self._cell_buf = []
+                self._cell_stack = []
+                self._cell_is_header = (tag == "th")
+                return
+            # Allow basic inline formatting inside cells
+            if self._in_cell:
+                if tag in ("b", "strong"):
+                    self._cell_buf.append("<b>")
+                    self._cell_stack.append("</b>")
+                    return
+                if tag in ("i", "em"):
+                    self._cell_buf.append("<i>")
+                    self._cell_stack.append("</i>")
+                    return
+                if tag == "u":
+                    self._cell_buf.append("<u>")
+                    self._cell_stack.append("</u>")
+                    return
+                if tag == "a":
+                    href = attr_map.get("href", "")
+                    self._cell_buf.append(f'<a href="{xml_escape(href)}">')
+                    self._cell_stack.append("</a>")
+                    return
+                # Nested <p> inside cell -> line break
+                if tag in ("p", "div"):
+                    self._cell_buf.append("<br/>")
+                    return
+            return
+
+        # Inline formatting outside table
+        if tag in ("b", "strong"):
+            self._buf.append("<b>")
+            self._stack.append("</b>")
+            return
+        if tag in ("i", "em"):
+            self._buf.append("<i>")
+            self._stack.append("</i>")
+            return
+        if tag == "u":
+            self._buf.append("<u>")
+            self._stack.append("</u>")
+            return
+        if tag == "a":
+            href = attr_map.get("href", "")
+            self._buf.append(f'<a href="{xml_escape(href)}">')
+            self._stack.append("</a>")
+            return
+        if tag == "li":
+            self._flush_paragraph()
+            self._pending_prefix = "• "
+            return
+        if tag in ("ul", "ol"):
+            self._flush_paragraph()
+            return
+
+    def handle_endtag(self, tag: str):
+        tag = (tag or "").lower()
+
+        if self._in_table:
+            if tag in ("td", "th") and self._in_cell:
+                para = self._flush_cell()
+                if self._current_row is not None:
+                    self._current_row.append(para)
+                self._in_cell = False
+                return
+            if tag == "tr":
+                if self._current_row is not None:
+                    self._table_rows.append(self._current_row)
+                self._current_row = None
+                return
+            if tag == "table":
+                self._finalize_table()
+                self._in_table = False
+                return
+
+            # Close inline tags in cell
+            if self._in_cell and tag in ("b", "strong", "i", "em", "u", "a"):
+                if self._cell_stack:
+                    self._cell_buf.append(self._cell_stack.pop())
+                return
+            return
+
+        if tag in ("p", "div", "li", "h1", "h2", "h3", "figure"):
+            self._flush_paragraph()
+            return
+
+        if tag in ("b", "strong", "i", "em", "u", "a"):
+            if self._stack:
+                self._buf.append(self._stack.pop())
+            return
+
+    def handle_data(self, data: str):
+        if data is None:
+            return
+        # skip purely whitespace-only chunks
+        t = data
+        if not t:
+            return
+        if self._in_cell:
+            self._cell_buf.append(xml_escape(rtl(t)))
+        else:
+            self._buf.append(xml_escape(rtl(t)))
+
+    def close(self):
+        super().close()
+        if self._in_table:
+            self._finalize_table()
+            self._in_table = False
+        self._flush_paragraph()
+
+
+def html_to_flowables(html: str, base_style: ParagraphStyle, font_name: str, font_bold: str) -> list[Any]:
+    """Convert HTML into a list of Flowables.
+
+    Unlike html_to_paragraphs, this also preserves HTML tables.
+    """
+    if not html:
+        return []
+    parser = _CKHtmlToFlowables(base_style, font_name, font_bold)
+    try:
+        parser.feed(html)
+        parser.close()
+        return parser.flowables
+    except Exception:
+        # Fallback: paragraphs only
+        out: list[Any] = []
+        for p in html_to_paragraphs(html):
+            out.append(Paragraph(p, base_style))
+            out.append(Spacer(1, 4))
+        return out
+
+
 def _register_font() -> tuple[str, str]:
     """Try register a Persian-capable font.
 
@@ -364,10 +606,10 @@ def build_report_pdf(
     # 1) Intro
     story.append(Paragraph(rtl("۱) متن ابتدایی"), h2))
     intro_html = doc.get("intro_html") or ""
-    for p in html_to_paragraphs(intro_html):
-        story.append(Paragraph(p, base))
-        story.append(Spacer(1, 4))
-    if not html_to_paragraphs(intro_html):
+    intro_flow = html_to_flowables(intro_html, base, font_name, font_bold)
+    if intro_flow:
+        story.extend(intro_flow)
+    else:
         story.append(Paragraph(rtl("—"), small))
 
     # Attachments
@@ -416,9 +658,9 @@ def build_report_pdf(
             story.append(Paragraph(rtl(f"{i}. {title} (Submission #{sid})"), ParagraphStyle(name="SecTitle", parent=h2, alignment=TA_RIGHT)))
 
             desc_html = sec.get("description_html") if isinstance(sec, dict) else ""
-            for p in html_to_paragraphs(desc_html or ""):
-                story.append(Paragraph(p, base))
-                story.append(Spacer(1, 3))
+            desc_flow = html_to_flowables(desc_html or "", base, font_name, font_bold)
+            if desc_flow:
+                story.extend(desc_flow)
 
             payload = sub.get("payload") or {}
             labels = fmeta.get("labels") if isinstance(fmeta, dict) else {}
@@ -516,10 +758,10 @@ def build_report_pdf(
     story.append(PageBreak())
     story.append(Paragraph(rtl("۳) نتیجه‌گیری و نتایج"), h2))
     concl_html = doc.get("conclusion_html") or ""
-    for p in html_to_paragraphs(concl_html):
-        story.append(Paragraph(p, base))
-        story.append(Spacer(1, 4))
-    if not html_to_paragraphs(concl_html):
+    concl_flow = html_to_flowables(concl_html, base, font_name, font_bold)
+    if concl_flow:
+        story.extend(concl_flow)
+    else:
         story.append(Paragraph(rtl("—"), small))
 
     # History

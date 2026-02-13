@@ -1,4 +1,7 @@
 {% extends "base.html" %}
+{% block head_extra %}
+  <link rel="stylesheet" href="/static/css/ckeditor5_rtl.css" />
+{% endblock %}
 {% block page_title %}گزارش #{{ report.id }}{% endblock %}
 {% block content %}
 <div class="row g-3">
@@ -68,7 +71,7 @@
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div class="h6 m-0">۱) مقدمه و پیوست‌ها</div>
-          <div class="text-muted small mt-1">این متن در ابتدای گزارش PDF قرار می‌گیرد؛ فایل‌ها هم به‌صورت لینک در متن و همچنین در لیست پیوست‌ها ذخیره می‌شوند.</div>
+          <div class="text-muted small mt-1">این متن در ابتدای گزارش PDF قرار می‌گیرد؛ فایل‌ها در بخش «پیوست‌های گزارش» ذخیره و نمایش داده می‌شوند.</div>
         </div>
         {% if can_edit %}
           <div class="d-flex gap-2">
@@ -92,9 +95,8 @@
               </div>
             </div>
           </div>
-          <div id="introEditor"></div>
+          <textarea id="introEditor" class="rte-textarea">{{ doc.intro_html | e }}</textarea>
         </div>
-        <input type="hidden" id="intro_html" value="{{ doc.intro_html | e }}">
 
         <div class="dropzone mt-3" id="reportDropzone" tabindex="0">
           <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2">
@@ -102,16 +104,19 @@
               <i class="bi bi-cloud-arrow-up fs-4"></i>
               <div>
                 <div class="fw-semibold">آپلود فایل</div>
-                <div class="text-muted small">فایل را اینجا رها کن یا انتخاب کن. پس از آپلود، لینک آن داخل متن درج می‌شود.</div>
+                <div class="text-muted small">فایل را اینجا رها کن یا انتخاب کن. پس از آپلود، در بخش «پیوست‌های گزارش» نمایش داده می‌شود.</div>
               </div>
             </div>
-            <div class="ms-md-auto d-flex gap-2 align-items-center">
-              <input class="d-none" type="file" id="reportFile" />
-              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="pickUploadFile()">انتخاب فایل</button>
-              <button class="btn btn-sm btn-outline-primary" id="uploadBtn" type="button" onclick="uploadSelectedFile()">
-                <span id="uploadBtnText">آپلود</span>
-                <span id="uploadSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
-              </button>
+            <div class="ms-md-auto d-flex flex-column align-items-end gap-1">
+              <div class="d-flex gap-2 align-items-center">
+                <input class="d-none" type="file" id="reportFile" />
+                <button class="btn btn-sm btn-outline-secondary" id="pickUploadBtn" type="button" onclick="event.stopPropagation(); pickUploadFile();">انتخاب فایل</button>
+                <button class="btn btn-sm btn-outline-primary" id="uploadBtn" type="button" onclick="event.stopPropagation(); uploadSelectedFile();">
+                  <span id="uploadBtnText">آپلود</span>
+                  <span id="uploadSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                </button>
+              </div>
+              <div id="reportFileSelectedInfo" class="small text-muted">هیچ فایلی انتخاب نشده است.</div>
             </div>
           </div>
         </div>
@@ -202,9 +207,8 @@
               </div>
             </div>
           </div>
-          <div id="conclusionEditor"></div>
+          <textarea id="conclusionEditor" class="rte-textarea">{{ doc.conclusion_html | e }}</textarea>
         </div>
-        <input type="hidden" id="conclusion_html" value="{{ doc.conclusion_html | e }}">
       {% else %}
         <div class="mt-2">{{ doc.conclusion_html | safe }}</div>
       {% endif %}
@@ -298,14 +302,18 @@
 
 </div>
 
-<link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+<script>
+  window.__CKEDITOR5_URL__ = "/static/vendor/ckeditor5/ckeditor.js";
+  window.__CKEDITOR5_FA_URL__ = "/static/vendor/ckeditor5/translations/fa.js";
+  window.__CKEDITOR5_FALLBACK_VER__ = "44.3.0";
+</script>
+<script src="/static/js/ckeditor5_lazy.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
 <script>
-let quillIntro = null;
-let quillConclusion = null;
-let quillSections = {};
+let rteIntro = null;
+let rteConclusion = null;
+let rteSections = {};
 let sortable = null;
 let sectionsCollapsed = false;
 
@@ -325,34 +333,231 @@ function setStatusBadge(){
   badge.classList.add('badge', cls);
 }
 
-function makeQuill(elId, initialHtml){
-  const q = new Quill("#"+elId, {
-    theme: "snow",
-    modules: {
-      toolbar: [
-        [{"header":[1,2,3,false]}],
-        ["bold","italic","underline"],
-        [{"list":"ordered"},{"list":"bullet"}],
-        [{"align":[]}],
-        ["link"],
-        ["clean"]
-      ]
-    }
-  });
-  q.root.innerHTML = initialHtml || "";
-  return q;
+function htmlToText(html){
+  try{
+    const d = document.createElement('div');
+    d.innerHTML = html || '';
+    return (d.textContent || d.innerText || '').trim();
+  }catch(e){
+    return '';
+  }
 }
 
-function initSectionEditors(){
-  quillSections = {};
-  document.querySelectorAll("[id^='secEditor_']").forEach(ed=>{
-    const sid = ed.id.replace("secEditor_","");
-    const init = document.getElementById("secHtml_"+sid)?.value || "";
-    quillSections[sid] = makeQuill(ed.id, init);
-    quillSections[sid].on('text-change', ()=>{
-      setTimeout(()=>updateStepper(), 0);
+async function destroyEditor(ed){
+  if(!ed) return;
+  try{ await ed.destroy(); }catch(e){}
+}
+
+function ensureRteHost(textareaId, opts={}){
+  const ta = document.getElementById(textareaId);
+  if(!ta) return null;
+
+  const hostId = textareaId + "__ck5_host";
+  let host = document.getElementById(hostId);
+  if(!host){
+    host = document.createElement('div');
+    host.id = hostId;
+    host.className = 'rte-host' + (opts.small ? ' rte-small' : '');
+    host.setAttribute('dir','rtl');
+    host.innerHTML = ta.value || '';
+    ta.insertAdjacentElement('afterend', host);
+  }else{
+    if(ta.value && ta.value !== host.innerHTML){
+      host.innerHTML = ta.value;
+    }
+  }
+
+  // hide the original textarea (we keep it synced for fallbacks and form posts)
+  ta.style.display = 'none';
+
+  if(opts.height){
+    const h = (typeof opts.height === 'number') ? (opts.height + 'px') : String(opts.height);
+    host.style.minHeight = h;
+  }
+  return {ta, host};
+}
+
+async function makeRTE(textareaId, opts={}){
+  if(!window.ClassicEditor) return null;
+
+  const parts = ensureRteHost(textareaId, {height: opts.height, small: !!opts.small});
+  if(!parts) return null;
+  const {ta, host} = parts;
+
+  window.__CK5_EDITORS__ = window.__CK5_EDITORS__ || {};
+  if(window.__CK5_EDITORS__[textareaId]){
+    await destroyEditor(window.__CK5_EDITORS__[textareaId]);
+    delete window.__CK5_EDITORS__[textareaId];
+  }
+
+  const toolbarDefault = [
+    'heading','|',
+    'bold','italic','|',
+    'link','bulletedList','numberedList','|',
+    'outdent','indent','|',
+    'blockQuote','insertTable','|',
+    'undo','redo'
+  ];
+
+  const toolbarMinimal = [
+    'bold','italic','|',
+    'link','bulletedList','numberedList','|',
+    'undo','redo'
+  ];
+
+  const cfg = {
+    // CKEditor 5 requires licenseKey starting from v44.0.0 (GPL usage is allowed)
+    licenseKey: 'GPL',
+    language: { ui: 'fa', content: 'fa' },
+    toolbar: opts.toolbar || (opts.minimal ? toolbarMinimal : toolbarDefault),
+    table: {
+      contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells' ]
+    }
+  };
+
+  let editor = null;
+  try{
+    editor = await ClassicEditor.create(host, cfg);
+  }catch(e){
+    console.error('CKEditor5 create failed', e);
+    try{ ta.style.display = ''; host.remove(); }catch(_){ }
+    return null;
+  }
+
+  // Force RTL + Persian font inside editor content
+  try{
+    editor.editing.view.change(writer=>{
+      const root = editor.editing.view.document.getRoot();
+      writer.setStyle('direction','rtl', root);
+      writer.setStyle('text-align','right', root);
+      writer.setStyle('font-family','Vazirmatn, Tahoma, Arial, sans-serif', root);
     });
+  }catch(e){}
+
+  const sync = ()=>{ try{ ta.value = editor.getData() || ''; }catch(e){} };
+  sync();
+  editor.model.document.on('change:data', sync);
+
+  window.__CK5_EDITORS__[textareaId] = editor;
+  return editor;
+}
+
+async function activateRTE(textareaId, opts={}){
+  try{
+    if(window.__CK5_EDITORS__ && window.__CK5_EDITORS__[textareaId]) return window.__CK5_EDITORS__[textareaId];
+  }catch(e){}
+  if(window.ensureCkeditor5Loaded){
+    await window.ensureCkeditor5Loaded();
+  }
+  return await makeRTE(textareaId, opts);
+}
+
+function bindEditorChange(ed, fn){
+  if(!ed) return;
+  try{ ed.model.document.on('change:data', fn); }catch(e){}
+}
+
+function destroySectionEditors(){
+  try{
+    if(window.__CK5_EDITORS__){
+      Object.keys(window.__CK5_EDITORS__).forEach(k=>{
+        if(k.startsWith('secEditor_')){
+          destroyEditor(window.__CK5_EDITORS__[k]);
+          delete window.__CK5_EDITORS__[k];
+        }
+      });
+    }
+  }catch(e){}
+  rteSections = {};
+}
+
+function bindLazyRTE(){
+  // Intro / Conclusion
+  const introTa = document.getElementById('introEditor');
+  const conclTa = document.getElementById('conclusionEditor');
+
+  function bindOne(el, which){
+    if(!el) return;
+    // Slightly taller editors for comfortable writing in Persian RTL
+    const opts = which === 'intro' ? {height: 380} : {height: 320};
+    const handler = async ()=>{
+      el.removeEventListener('focus', handler);
+      el.removeEventListener('click', handler);
+      const ed = await activateRTE(el.id, opts);
+      if(which === 'intro'){ rteIntro = ed; }
+      if(which === 'conclusion'){ rteConclusion = ed; }
+
+      if(ed){
+        bindEditorChange(ed, ()=>{
+          if(which === 'intro'){
+            dirtyIntro = true;
+            setSaveState('intro', 'در انتظار ذخیره...');
+            updateWordCount('intro');
+            debounceAutoSave('intro', ()=>saveIntro({silent:true}), 1300);
+          }else{
+            dirtyConclusion = true;
+            setSaveState('conclusion', 'در انتظار ذخیره...');
+            updateWordCount('conclusion');
+            debounceAutoSave('conclusion', ()=>saveConclusion({silent:true}), 1300);
+          }
+          updateStepper();
+        });
+        setTimeout(()=>{ updateWordCount(which); updateStepper(); }, 0);
+      }
+      updateStepper();
+    };
+    el.addEventListener('focus', handler);
+    el.addEventListener('click', handler);
+  }
+
+  bindOne(introTa, 'intro');
+  bindOne(conclTa, 'conclusion');
+
+  // Section editors (lazy init)
+  document.querySelectorAll("textarea[id^='secEditor_']").forEach(el=>{
+    const sid = el.id.replace("secEditor_","");
+    const handler = async ()=>{
+      el.removeEventListener('focus', handler);
+      el.removeEventListener('click', handler);
+      const ed = await activateRTE(el.id, {height: 220, small: true, minimal: true});
+      rteSections[sid] = ed;
+      if(ed){
+        bindEditorChange(ed, ()=>{ setTimeout(()=>updateStepper(), 0); });
+      }
+      updateStepper();
+    };
+    el.addEventListener('focus', handler);
+    el.addEventListener('click', handler);
   });
+}
+
+
+function getEditorHtml(which){
+  const ed = which === 'intro' ? rteIntro : rteConclusion;
+  return ed ? (ed.getData() || '') : (document.getElementById(which === 'intro' ? 'introEditor' : 'conclusionEditor')?.value || '');
+}
+
+function getEditorText(which){
+  const ed = which === 'intro' ? rteIntro : rteConclusion;
+  if(!ed){
+    const ta = document.getElementById(which === 'intro' ? 'introEditor' : 'conclusionEditor');
+    return ta ? (ta.value || '') : '';
+  }
+  return htmlToText(ed.getData());
+}
+
+async function initSectionEditors(){
+  // Optional helper: force-init all section editors (not used in normal flow)
+  destroySectionEditors();
+  const els = Array.from(document.querySelectorAll("textarea[id^='secEditor_']"));
+  for(const el of els){
+    const sid = el.id.replace("secEditor_", "");
+    const ed = await activateRTE(el.id, {height: 220, small: true, minimal: true});
+    rteSections[sid] = ed;
+    if(ed){
+      bindEditorChange(ed, ()=>{ setTimeout(()=>updateStepper(), 0); });
+    }
+  }
 }
 
 function initSortable(){
@@ -363,13 +568,15 @@ function initSortable(){
     animation: 150,
     handle: ".drag-handle",
     onEnd: async function(){
+      // prevent leaked editor instances when the sections HTML is re-rendered
+      destroySectionEditors();
       const ids = Array.from(container.querySelectorAll("[data-sid]")).map(el=>el.getAttribute("data-sid"));
       const fd = new FormData();
       fd.append("order", ids.join(","));
       const res = await fetch(`/reports/{{ report.id }}/sections/reorder`, {method:"POST", body: fd});
       const htmlOut = await res.text();
       document.getElementById("sectionsBox").innerHTML = htmlOut;
-      initSectionEditors();
+      bindLazyRTE();
       initSortable();
       updateStepper();
     }
@@ -378,10 +585,9 @@ function initSortable(){
 
 function updateWordCount(which){
   try{
-    let q = which === 'intro' ? quillIntro : quillConclusion;
     const el = document.getElementById(which + 'WordCount');
-    if(!q || !el) return;
-    const t = (q.getText() || '').trim();
+    if(!el) return;
+    const t = getEditorText(which);
     const words = t ? t.split(/\s+/).filter(Boolean).length : 0;
     const chars = t.length;
     el.textContent = `— ${words} واژه / ${chars} کاراکتر`;
@@ -399,8 +605,8 @@ function debounceAutoSave(which, fn, delay=1500){
 }
 
 function insertTemplate(target, kind){
-  const q = target === 'intro' ? quillIntro : quillConclusion;
-  if(!q) return;
+  const ed = target === 'intro' ? rteIntro : rteConclusion;
+  if(!ed) return;
 
   const templates = {
     standard: `<p><b>هدف گزارش</b></p><p>در این قسمت، هدف و دامنه زمانی/مکانی گزارش را توضیح دهید.</p><p><b>وضعیت کلی</b></p><p>جمع‌بندی کوتاه از وضعیت شاخص‌ها و یافته‌های مهم.</p><p><b>چالش‌ها و نکات کلیدی</b></p><ul><li>چالش/نکته شماره ۱ ...</li><li>چالش/نکته شماره ۲ ...</li></ul>`,
@@ -408,11 +614,15 @@ function insertTemplate(target, kind){
   };
 
   const html = templates[kind] || '';
-  q.root.innerHTML = html;
+  ed.setData(html);
   if(target === 'intro') dirtyIntro = true;
   else dirtyConclusion = true;
-  updateWordCount(target);
-  updateStepper();
+
+  // counts & stepper refresh after setData
+  setTimeout(()=>{
+    updateWordCount(target);
+    updateStepper();
+  }, 0);
 }
 
 async function saveMeta(opts={silent:false}){
@@ -435,8 +645,7 @@ async function saveMeta(opts={silent:false}){
 }
 
 async function saveIntro(opts={silent:true}){
-  if(!quillIntro) return;
-  const html = quillIntro.root.innerHTML;
+  const html = getEditorHtml('intro');
   const fd = new FormData();
   fd.append('note_html', html);
   setSaveState('intro', 'در حال ذخیره...');
@@ -453,8 +662,7 @@ async function saveIntro(opts={silent:true}){
 }
 
 async function saveConclusion(opts={silent:true}){
-  if(!quillConclusion) return;
-  const html = quillConclusion.root.innerHTML;
+  const html = getEditorHtml('conclusion');
   const fd = new FormData();
   fd.append('conclusion_html', html);
   setSaveState('conclusion', 'در حال ذخیره...');
@@ -471,16 +679,17 @@ async function saveConclusion(opts={silent:true}){
 }
 
 async function saveSectionDesc(submissionId){
-  const q = quillSections[String(submissionId)];
-  if(!q) return;
-  const html = q.root.innerHTML;
+  const ed = rteSections[String(submissionId)];
+  const ta = document.getElementById('secEditor_' + submissionId);
+  const html = ed ? (ed.getData() || '') : (ta ? (ta.value || '') : '');
   const fd = new FormData();
   fd.append('submission_id', submissionId);
   fd.append('description_html', html);
   const res = await fetch(`/reports/{{ report.id }}/sections/update`, {method:'POST', body: fd});
   const htmlOut = await res.text();
+  destroySectionEditors();
   document.getElementById('sectionsBox').innerHTML = htmlOut;
-  initSectionEditors();
+  bindLazyRTE();
   initSortable();
   updateStepper();
   showToast('توضیحات ذخیره شد','success');
@@ -492,8 +701,9 @@ async function removeSection(submissionId){
   fd.append('submission_id', submissionId);
   const res = await fetch(`/reports/{{ report.id }}/sections/remove`, {method:'POST', body: fd});
   const htmlOut = await res.text();
+  destroySectionEditors();
   document.getElementById('sectionsBox').innerHTML = htmlOut;
-  initSectionEditors();
+  bindLazyRTE();
   initSortable();
   updateStepper();
 }
@@ -502,51 +712,78 @@ function pickUploadFile(){
   document.getElementById('reportFile')?.click();
 }
 
+async function refreshAttachmentsBox(){
+  const box = document.getElementById('fileAttachmentsBox');
+  if(!box) return;
+  try{
+    const res = await fetch(`/reports/{{ report.id }}/attachments/partial`);
+    if(res.ok){
+      box.innerHTML = await res.text();
+    }
+  }catch(e){
+    // best-effort
+  }
+}
+
+function setReportFileSelectedInfo(text){
+  const el = document.getElementById('reportFileSelectedInfo');
+  if(el) el.textContent = text;
+}
+
 async function uploadSelectedFile(fileOverride=null){
   const input = document.getElementById('reportFile');
   const file = fileOverride || (input && input.files ? input.files[0] : null);
   if(!file){ showToast('ابتدا فایل را انتخاب کنید','warning'); return; }
 
+  setReportFileSelectedInfo(`فایل انتخاب شد: ${file.name}`);
+
   const btn = document.getElementById('uploadBtn');
   const sp = document.getElementById('uploadSpinner');
-  const tx = document.getElementById('uploadBtnText');
-  if(btn){ btn.disabled = true; }
-  if(sp){ sp.classList.remove('d-none'); }
-  if(tx){ tx.textContent = 'در حال آپلود...'; }
+  const bt = document.getElementById('uploadBtnText');
+  if(btn) btn.disabled = true;
+  if(sp) sp.classList.remove('d-none');
+  if(bt) bt.textContent = 'در حال آپلود...';
 
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch(`/reports/{{ report.id }}/upload`, {method:'POST', body: fd});
-
-  if(btn){ btn.disabled = false; }
-  if(sp){ sp.classList.add('d-none'); }
-  if(tx){ tx.textContent = 'آپلود'; }
-
-  if(!res.ok){ showToast('آپلود ناموفق','danger'); return; }
-  const data = await res.json();
-  const url = data.url;
-  const name = data.name || 'file';
-
-  // insert link in intro editor
-  const range = quillIntro.getSelection(true);
-  quillIntro.insertText(range.index, name, 'link', url);
-  quillIntro.insertText(range.index + name.length, ' ');
-  dirtyIntro = true;
-  debounceAutoSave('intro', ()=>saveIntro({silent:true}), 1200);
-
-  // refresh attachments list without full reload
   try{
-    const res2 = await fetch(`/reports/{{ report.id }}/attachments/partial`);
-    if(res2.ok){
-      const box = document.getElementById('fileAttachmentsBox');
-      box.innerHTML = await res2.text();
-      if(window.htmx){ htmx.process(box); }
-    }
-  }catch(e){}
+    const fd = new FormData();
+    fd.append('file', file, file.name);
 
-  showToast('فایل اضافه شد','success');
-  if(input) input.value = '';
-  // if fileOverride used, nothing else to reset
+    const res = await fetch(`/reports/{{ report.id }}/upload`, {method:'POST', body: fd});
+    const text = await res.text();
+
+    if(!res.ok){
+      // show server message if possible
+      try{
+        const j = JSON.parse(text);
+        showToast(j.detail || j.message || 'آپلود ناموفق','danger');
+      }catch(e){
+        showToast(text || 'آپلود ناموفق','danger');
+      }
+      return;
+    }
+
+    // Refresh attachments list (server returns JSON by default; also supports HTML if changed)
+    const box = document.getElementById('fileAttachmentsBox');
+    if(box){
+      // If response looks like HTML, render it; otherwise fetch partial.
+      const looksHtml = text && (text.includes('<div') || text.includes('<h') || text.includes('list-group'));
+      if(looksHtml){
+        box.innerHTML = text;
+      }else{
+        await refreshAttachmentsBox();
+      }
+    }
+
+    showToast('فایل اضافه شد','success');
+    setReportFileSelectedInfo(`آپلود شد: ${file.name}`);
+    if(input) input.value = '';
+  }catch(e){
+    showToast('آپلود ناموفق','danger');
+  }finally{
+    if(btn) btn.disabled = false;
+    if(sp) sp.classList.add('d-none');
+    if(bt) bt.textContent = 'آپلود';
+  }
 }
 
 function enableDropzone(){
@@ -564,6 +801,7 @@ function enableDropzone(){
     dz.classList.remove('dragover');
     const files = e.dataTransfer?.files;
     if(files && files.length){
+      setReportFileSelectedInfo(`فایل انتخاب شد: ${files[0].name}`);
       uploadSelectedFile(files[0]);
     }
   });
@@ -578,8 +816,8 @@ function updateStepper(){
   const metaSubtitle = (document.getElementById('metaSubtitle')?.value || '').trim();
   const metaDone = (metaTitle.length + metaSubtitle.length) > 0;
 
-  const introDone = quillIntro ? (quillIntro.getText() || '').trim().length > 0 : false;
-  const conclusionDone = quillConclusion ? (quillConclusion.getText() || '').trim().length > 0 : false;
+  const introDone = rteIntro ? (getEditorText('intro') || '').trim().length > 0 : false;
+  const conclusionDone = rteConclusion ? (getEditorText('conclusion') || '').trim().length > 0 : false;
   const hasSections = document.querySelectorAll('#sectionsContainer [data-sid]').length > 0;
 
   const doneMap = {meta: metaDone, intro: introDone, sections: hasSections, conclusion: conclusionDone};
@@ -633,31 +871,18 @@ function attachLeaveGuard(){
 document.addEventListener('DOMContentLoaded', ()=>{
   setStatusBadge();
   {% if can_edit %}
-    quillIntro = makeQuill('introEditor', document.getElementById('intro_html').value);
-    quillConclusion = makeQuill('conclusionEditor', document.getElementById('conclusion_html').value);
-    initSectionEditors();
+    bindLazyRTE();
     initSortable();
-
-    quillIntro.on('text-change', ()=>{
-      dirtyIntro = true;
-      setSaveState('intro', 'در انتظار ذخیره...');
-      updateWordCount('intro');
-      debounceAutoSave('intro', ()=>saveIntro({silent:true}), 1300);
-      updateStepper();
-    });
-
-    quillConclusion.on('text-change', ()=>{
-      dirtyConclusion = true;
-      setSaveState('conclusion', 'در انتظار ذخیره...');
-      updateWordCount('conclusion');
-      debounceAutoSave('conclusion', ()=>saveConclusion({silent:true}), 1300);
-      updateStepper();
-    });
-
-    updateWordCount('intro');
-    updateWordCount('conclusion');
     attachAutoSave();
     enableDropzone();
+    const rf = document.getElementById('reportFile');
+    if(rf){
+      rf.addEventListener('change', ()=>{
+        const f = rf.files && rf.files[0];
+        if(f) setReportFileSelectedInfo(`فایل انتخاب شد: ${f.name}`);
+        else setReportFileSelectedInfo('هیچ فایلی انتخاب نشده است.');
+      });
+    }
     attachLeaveGuard();
     updateStepper();
   {% endif %}
@@ -667,11 +892,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
 document.body.addEventListener('htmx:afterSwap', (e)=>{
   if(e.target && e.target.id === 'sectionsBox'){
     {% if can_edit %}
-      initSectionEditors();
+      bindLazyRTE();
       initSortable();
       updateStepper();
     {% endif %}
   }
 });
 </script>
+
 {% endblock %}
