@@ -21,13 +21,14 @@ from app.db.models.report import Report, ReportStatus
 from app.db.models.workflow_log import WorkflowLog
 from app.db.models.report_submission import ReportSubmission
 from app.db.models.report_attachment import ReportAttachment
+from app.db.models.notification import Notification
 from app.db.models.submission import Submission
 from app.db.models.form_template import FormTemplate
 from app.db.models.org_county import OrgCountyUnit
 from app.db.models.user import User, Role
 from app.db.models.report_audit_log import ReportAuditLog
 from app.db.models.report import ReportKind
-from app.utils.badges import get_badge_count
+from app.utils.badges import get_badge_count, invalidate_badge
 from app.utils.report_agg import aggregate_content
 from app.utils.report_doc import load_doc, dump_doc
 from app.utils.notify import notify
@@ -129,6 +130,18 @@ def _eligible_recipients(db: Session, report: Report, action: str) -> list[User]
         recipients = get_recipients(db, report, action)
     except KeyError:
         recipients = []
+
+    # Fix: For provincial reports, when the provincial manager requests revision,
+    # the report must return ONLY to the provincial expert who last sent it up.
+    # (Never show county experts in the dropdown.)
+    if (
+        action == "request_revision"
+        and report.kind == ReportKind.PROVINCIAL
+        and report.status == ReportStatus.PROV_MANAGER_REVIEW
+    ):
+        sender = _last_sender_user(db, report)
+        if sender and sender.role == Role.ORG_PROV_EXPERT and sender.org_id == report.org_id:
+            return [sender]
 
     # Fallback: for request_revision, if config yields none, send back to last sender.
     if action == "request_revision" and not recipients:
@@ -295,6 +308,21 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
     r = db.get(Report, report_id)
     require(r is not None, "گزارش یافت نشد", 404)
     require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+
+    # Auto-mark notifications as read when user opens the related report.
+    # This keeps notifications personal and removes the need for manual "mark read".
+    updated = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == user.id,
+            Notification.report_id == r.id,
+            Notification.is_read == False,
+        )
+        .update({"is_read": True}, synchronize_session=False)
+    )
+    if updated:
+        db.commit()
+        invalidate_badge(user.id)
 
     logs = db.query(WorkflowLog).filter(WorkflowLog.report_id == r.id).order_by(WorkflowLog.id.desc()).all()
 

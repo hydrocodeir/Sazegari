@@ -191,7 +191,8 @@ TRANSITIONS: tuple[Transition, ...] = (
         from_status=ReportStatus.PROV_MANAGER_REVIEW,
         action="request_revision",
         to_status=ReportStatus.NEEDS_REVISION,
-        recipient_roles=(Role.ORG_COUNTY_EXPERT,),
+        # Provincial report must return only to provincial expert (drafter), not to county experts.
+        recipient_roles=(Role.ORG_PROV_EXPERT,),
     ),
     Transition(
         kind=ReportKind.PROVINCIAL,
