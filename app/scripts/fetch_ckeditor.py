@@ -7,8 +7,11 @@ import urllib.request
 from pathlib import Path
 
 # CKEditor 5 (OSS) - Classic build.
-# We fetch the build from jsDelivr (npm) and self-host it under /static/vendor/ckeditor5
-# so the browser can cache it aggressively and avoid slow external CDNs.
+# We self-host it under /static/vendor/ckeditor5 so the browser can cache it
+# aggressively and avoid slow external CDNs.
+# Source priority:
+#   1) local pre-downloaded files in /static/js/ckeditor5-build-classic
+#   2) CDN download fallback
 #
 # Default pinned version chosen for stability.
 DEFAULT_VERSION = os.environ.get("CKEDITOR5_VERSION", "44.3.0")
@@ -62,6 +65,23 @@ def _try_download(urls: list[str], out_path: Path) -> None:
         raise last_exc
 
 
+def _try_copy_local(src: Path, out_path: Path) -> bool:
+    try:
+        if not src.exists():
+            print(f"[fetch_ckeditor] local source not found: {src}")
+            return False
+        if src.stat().st_size <= 0:
+            print(f"[fetch_ckeditor] local source is empty: {src}")
+            return False
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, out_path)
+        print(f"[fetch_ckeditor] copied local asset: {src} -> {out_path}")
+        return True
+    except Exception as e:
+        print(f"[fetch_ckeditor] local copy failed: {src} ({e})")
+        return False
+
+
 def fetch_ckeditor() -> None:
     """Fetch and install CKEditor 5 classic build locally.
 
@@ -72,12 +92,15 @@ def fetch_ckeditor() -> None:
     The app will still run even if download fails (it will fall back to CDN in the lazy loader).
     """
     base_dir = Path(__file__).resolve().parents[1]  # app/
+    local_dir = base_dir / "static" / "js" / "ckeditor5-build-classic"
     target_dir = base_dir / "static" / "vendor" / "ckeditor5"
+    local_ckjs = local_dir / "ckeditor.js"
+    local_fa_js = local_dir / "fa.js"
     ckjs = target_dir / "ckeditor.js"
     fa_js = target_dir / "translations" / "fa.js"
 
-    if ckjs.exists():
-        print(f"[fetch_ckeditor] already present: {ckjs}")
+    if ckjs.exists() and fa_js.exists():
+        print(f"[fetch_ckeditor] already present: {ckjs}, {fa_js}")
         return
 
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -85,17 +108,27 @@ def fetch_ckeditor() -> None:
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="ckeditor5_fetch_"))
     try:
-        tmp_ck = tmp_dir / "ckeditor.js"
-        _try_download(_candidate_urls("ckeditor.js"), tmp_ck)
-        shutil.copy2(tmp_ck, ckjs)
+        if not ckjs.exists():
+            copied = _try_copy_local(local_ckjs, ckjs)
+            if not copied:
+                tmp_ck = tmp_dir / "ckeditor.js"
+                _try_download(_candidate_urls("ckeditor.js"), tmp_ck)
+                shutil.copy2(tmp_ck, ckjs)
+        else:
+            print(f"[fetch_ckeditor] already present: {ckjs}")
 
         # Persian translation (optional)
-        try:
-            tmp_fa = tmp_dir / "fa.js"
-            _try_download(_candidate_urls("fa.js"), tmp_fa)
-            shutil.copy2(tmp_fa, fa_js)
-        except Exception as e:
-            print(f"[fetch_ckeditor] fa translation download failed (continuing): {e}")
+        if not fa_js.exists():
+            copied_fa = _try_copy_local(local_fa_js, fa_js)
+            if not copied_fa:
+                try:
+                    tmp_fa = tmp_dir / "fa.js"
+                    _try_download(_candidate_urls("fa.js"), tmp_fa)
+                    shutil.copy2(tmp_fa, fa_js)
+                except Exception as e:
+                    print(f"[fetch_ckeditor] fa translation download failed (continuing): {e}")
+        else:
+            print(f"[fetch_ckeditor] already present: {fa_js}")
 
         print(f"[fetch_ckeditor] installed into: {target_dir}")
 
