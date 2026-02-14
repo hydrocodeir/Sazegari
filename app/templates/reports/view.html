@@ -327,14 +327,16 @@
 
 </div>
 
-<script>
-  window.__CKEDITOR5_URL__ = "/static/vendor/ckeditor5/ckeditor.js";
-  window.__CKEDITOR5_FA_URL__ = "/static/vendor/ckeditor5/translations/fa.js";
-  window.__CKEDITOR5_FALLBACK_VER__ = "44.3.0";
+<script
+  src="{{ url_for('static', path='/js/ckeditor5-build-classic/ckeditor.js') }}"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@44.3.0/build/ckeditor.js';">
 </script>
-<script src="/static/js/ckeditor5_lazy.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script
+  src="{{ url_for('static', path='/js/ckeditor5-build-classic/fa.js') }}"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@44.3.0/build/translations/fa.js';">
+</script>
 <script src="{{ url_for('static', path='/js/gojs_3.1.5.js') }}"></script>
+<script src="{{ url_for('static', path='/js/Sortable.min.js') }}"></script>
 
 <script>
 let rteIntro = null;
@@ -709,9 +711,7 @@ async function activateRTE(textareaId, opts={}){
   try{
     if(window.__CK5_EDITORS__ && window.__CK5_EDITORS__[textareaId]) return window.__CK5_EDITORS__[textareaId];
   }catch(e){}
-  if(window.ensureCkeditor5Loaded){
-    await window.ensureCkeditor5Loaded();
-  }
+  if(!window.ClassicEditor) return null;
   return await makeRTE(textareaId, opts);
 }
 
