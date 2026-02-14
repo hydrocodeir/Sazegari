@@ -222,7 +222,17 @@
     </div>
 
     <div class="card p-3 border-0 shadow-sm hover-lift">
-      <h6 class="mb-3">تاریخچه گردش‌کار</h6>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="m-0">تاریخچه گردش‌کار</h6>
+        <button
+          class="btn btn-sm btn-outline-primary"
+          type="button"
+          data-bs-toggle="modal"
+          data-bs-target="#workflowFlowModal"
+          onclick="openWorkflowFlowModal()">
+          <i class="bi bi-diagram-3 me-1"></i>نمایش فلوچارت
+        </button>
+      </div>
       <div class="table-responsive">
         <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
           <thead><tr><th>#</th><th>اقدام</th><th>از</th><th>به</th><th>انجام‌دهنده</th></tr></thead>
@@ -238,6 +248,21 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="modal fade" id="workflowFlowModal" tabindex="-1" aria-labelledby="workflowFlowModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="workflowFlowModalLabel">فلوچارت گردش‌کار گزارش</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="workflowFlowDiagram" class="border rounded-3 bg-light-subtle" style="height: 62vh; min-height: 420px;"></div>
+            <div id="workflowFlowHint" class="text-muted small mt-2"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -309,6 +334,7 @@
 </script>
 <script src="/static/js/ckeditor5_lazy.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="{{ url_for('static', path='/js/gojs_3.1.5.js') }}"></script>
 
 <script>
 let rteIntro = null;
@@ -321,6 +347,243 @@ let dirtyIntro = false;
 let dirtyConclusion = false;
 let dirtyMeta = false;
 let autoSaveTimers = {intro: null, conclusion: null, meta: null};
+let workflowFlowDiagram = null;
+
+const workflowLogs = [
+  {% for l in logs %}
+  {
+    id: {{ l.id }},
+    action: {{ (l.action|string)|tojson }},
+    from_status: {{ (l.from_status|string)|tojson }},
+    to_status: {{ (l.to_status|string)|tojson }},
+    actor: {{ (actor_map.get(l.actor_id, l.actor_id)|string)|tojson }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+
+const FLOW_COLORS = [
+  "#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1",
+  "#20c997", "#0dcaf0", "#6c757d", "#d63384", "#6610f2"
+];
+
+function normalizeStatusKey(raw){
+  const s = String(raw || "").trim();
+  return s || "unknown";
+}
+
+function prettifyStatus(raw){
+  let s = String(raw || "").trim();
+  if(!s) return "نامشخص";
+  s = s.replace(/^ReportStatus\./, "");
+  return s.replaceAll("_", " ");
+}
+
+function statusColor(statusKey){
+  let hash = 0;
+  const s = String(statusKey || "");
+  for(let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return FLOW_COLORS[hash % FLOW_COLORS.length];
+}
+
+function trimText(txt, maxLen){
+  const t = String(txt || "");
+  if(t.length <= maxLen) return t;
+  return t.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
+
+function buildWorkflowFlowGraphData(logs){
+  const sorted = [...(logs || [])].sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+  const nodesMap = new Map();
+  const linksMap = new Map();
+
+  function ensureNode(statusRaw){
+    const key = normalizeStatusKey(statusRaw);
+    if(!nodesMap.has(key)){
+      nodesMap.set(key, {
+        key,
+        label: prettifyStatus(statusRaw),
+        color: statusColor(key),
+        inCount: 0,
+        outCount: 0
+      });
+    }
+    return nodesMap.get(key);
+  }
+
+  for(const l of sorted){
+    const fromNode = ensureNode(l.from_status || "unknown");
+    const toNode = ensureNode(l.to_status || l.from_status || "unknown");
+    fromNode.outCount += 1;
+    toNode.inCount += 1;
+
+    const lk = `${fromNode.key}=>${toNode.key}`;
+    if(!linksMap.has(lk)){
+      linksMap.set(lk, {
+        from: fromNode.key,
+        to: toNode.key,
+        count: 0,
+        lastAction: "",
+        actors: new Set()
+      });
+    }
+    const edge = linksMap.get(lk);
+    edge.count += 1;
+    if(l.action) edge.lastAction = String(l.action);
+    if(l.actor) edge.actors.add(String(l.actor));
+  }
+
+  const nodeData = Array.from(nodesMap.values()).map((n) => ({
+    key: n.key,
+    label: n.label,
+    color: n.color,
+    meta: `ورودی: ${n.inCount} | خروجی: ${n.outCount}`
+  }));
+
+  const linkData = Array.from(linksMap.values()).map((l) => {
+    const actorLine = trimText(Array.from(l.actors).join("، "), 48);
+    return {
+      from: l.from,
+      to: l.to,
+      text: l.lastAction ? prettifyStatus(l.lastAction) : "transition",
+      subtext: actorLine ? `${l.count} بار | ${actorLine}` : `${l.count} بار`
+    };
+  });
+
+  if(nodeData.length === 0){
+    const fallback = prettifyStatus('{{ report.status.value }}');
+    nodeData.push({
+      key: "current_status",
+      label: fallback,
+      color: statusColor("current_status"),
+      meta: "هنوز سابقه‌ای ثبت نشده است"
+    });
+  }
+
+  return { nodeData, linkData };
+}
+
+function renderWorkflowFlowDiagram(){
+  const host = document.getElementById("workflowFlowDiagram");
+  const hint = document.getElementById("workflowFlowHint");
+  if(!host) return;
+
+  if(!window.go){
+    if(hint) hint.textContent = "کتابخانه GoJS بارگذاری نشد.";
+    return;
+  }
+
+  const $ = go.GraphObject.make;
+
+  if(!workflowFlowDiagram){
+    workflowFlowDiagram = $(go.Diagram, "workflowFlowDiagram", {
+      isReadOnly: true,
+      "undoManager.isEnabled": false,
+      "animationManager.isEnabled": true,
+      contentAlignment: go.Spot.Center,
+      padding: 20,
+      initialAutoScale: go.Diagram.Uniform,
+      "toolManager.mouseWheelBehavior": go.ToolManager.WheelZoom,
+      layout: $(go.LayeredDigraphLayout, {
+        direction: 0,
+        layerSpacing: 70,
+        columnSpacing: 40,
+        setsPortSpots: false
+      })
+    });
+
+    workflowFlowDiagram.nodeTemplate =
+      $(go.Node, "Auto",
+        { selectionAdorned: false },
+        $(go.Shape, "RoundedRectangle",
+          {
+            strokeWidth: 0,
+            parameter1: 12,
+            shadowVisible: true,
+            shadowColor: "rgba(15, 23, 42, 0.2)",
+            shadowOffset: new go.Point(0, 2)
+          },
+          new go.Binding("fill", "color")
+        ),
+        $(go.Panel, "Vertical", { margin: 10, maxSize: new go.Size(280, NaN) },
+          $(go.TextBlock,
+            {
+              stroke: "#fff",
+              font: "700 12px Vazirmatn, Tahoma, Arial, sans-serif",
+              textAlign: "center",
+              wrap: go.WrapFit
+            },
+            new go.Binding("text", "label")
+          ),
+          $(go.TextBlock,
+            {
+              stroke: "rgba(255,255,255,.9)",
+              margin: new go.Margin(4, 0, 0, 0),
+              font: "11px Vazirmatn, Tahoma, Arial, sans-serif",
+              textAlign: "center"
+            },
+            new go.Binding("text", "meta")
+          )
+        )
+      );
+
+    workflowFlowDiagram.linkTemplate =
+      $(go.Link,
+        {
+          curve: go.Curve.Bezier,
+          routing: go.Routing.AvoidsNodes,
+          corner: 10,
+          toShortLength: 6
+        },
+        $(go.Shape, { stroke: "#64748b", strokeWidth: 2 }),
+        $(go.Shape, { toArrow: "Standard", fill: "#64748b", stroke: null }),
+        $(go.Panel, "Auto",
+          { segmentFraction: 0.5 },
+          $(go.Shape, "RoundedRectangle", { fill: "rgba(255,255,255,.95)", stroke: "#dbe2ea" }),
+          $(go.TextBlock,
+            {
+              margin: new go.Margin(4, 8, 3, 8),
+              stroke: "#1f2937",
+              font: "600 11px Vazirmatn, Tahoma, Arial, sans-serif",
+              wrap: go.WrapFit
+            },
+            new go.Binding("text", "text")
+          )
+        ),
+        $(go.Panel, "Auto",
+          { segmentFraction: 0.5, segmentOffset: new go.Point(0, 18) },
+          $(go.Shape, "RoundedRectangle", { fill: "rgba(248,250,252,.98)", stroke: "#e5e7eb" }),
+          $(go.TextBlock,
+            {
+              margin: new go.Margin(2, 8, 4, 8),
+              stroke: "#475569",
+              font: "11px Vazirmatn, Tahoma, Arial, sans-serif",
+              wrap: go.WrapFit
+            },
+            new go.Binding("text", "subtext")
+          )
+        )
+      );
+  }
+
+  const graph = buildWorkflowFlowGraphData(workflowLogs);
+  workflowFlowDiagram.model = new go.GraphLinksModel(graph.nodeData, graph.linkData);
+
+  if(hint){
+    hint.textContent = graph.linkData.length
+      ? `تعداد وضعیت‌ها: ${graph.nodeData.length} | تعداد انتقال‌ها: ${graph.linkData.length}`
+      : "برای این گزارش هنوز انتقال گردش‌کار ثبت نشده است.";
+  }
+
+  setTimeout(() => {
+    try{
+      workflowFlowDiagram.zoomToFit();
+    }catch(e){}
+  }, 80);
+}
+
+function openWorkflowFlowModal(){
+  setTimeout(renderWorkflowFlowDiagram, 80);
+}
 
 function setStatusBadge(){
   const badge = document.getElementById('statusBadge');
@@ -886,6 +1149,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
     attachLeaveGuard();
     updateStepper();
   {% endif %}
+
+  const flowModal = document.getElementById('workflowFlowModal');
+  if(flowModal){
+    flowModal.addEventListener('shown.bs.modal', ()=>{
+      renderWorkflowFlowDiagram();
+    });
+  }
+
+  window.addEventListener('resize', ()=>{
+    if(workflowFlowDiagram){
+      try{
+        workflowFlowDiagram.requestUpdate();
+        workflowFlowDiagram.zoomToFit();
+      }catch(e){}
+    }
+  });
 });
 
 // Re-init after HTMX swap (add section / remove etc.)
