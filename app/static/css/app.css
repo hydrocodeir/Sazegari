@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("fonts/Vazirmatn%5Bwght%5D.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root{
   --brand: #0b5ed7;           /* رنگ سازمان - می‌تونی عوضش کنی */
   --brand-2: #0a58ca;

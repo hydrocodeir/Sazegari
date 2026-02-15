@@ -101,14 +101,23 @@ async def add_process_time_header(request: Request, call_next):
 async def add_cache_headers(request: Request, call_next):
     resp = await call_next(request)
     path = request.url.path or ""
+    is_success = 200 <= resp.status_code < 400
 
     # Aggressive caching for vendor assets (editors) + fonts
-    if path.startswith("/static/vendor/ckeditor/") or path.startswith("/static/vendor/ckeditor5/") or path.startswith("/static/fonts/"):
+    if is_success and (
+        path.startswith("/static/vendor/ckeditor/")
+        or path.startswith("/static/vendor/ckeditor5/")
+        or path.startswith("/static/fonts/")
+    ):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
 
     # Moderate caching for our static css/js/images (safe defaults)
-    if path.startswith("/static/css/") or path.startswith("/static/js/") or path.startswith("/static/img/"):
+    if is_success and (
+        path.startswith("/static/css/")
+        or path.startswith("/static/js/")
+        or path.startswith("/static/img/")
+    ):
         resp.headers.setdefault("Cache-Control", "public, max-age=86400")
         return resp
 
