@@ -28,4 +28,4 @@ COPY README.md /app/README.md
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m app.scripts.fetch_ckeditor || true; python -m app.scripts.fetch_fonts || true; uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]

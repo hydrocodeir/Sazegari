@@ -22,6 +22,9 @@
   <script src="{{ url_for('static', path='/js/bootstrap.bundle.min.js') }}?v=local"
           defer
           onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js';"></script>
+  <script>
+    window.__IS_AUTHENTICATED__ = {{ 'true' if user else 'false' }};
+  </script>
   <script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
 </head>
 
@@ -210,6 +213,24 @@
 
   <!-- Toasts -->
   <div id="toastContainer" class="toast-container position-fixed bottom-0 start-0 p-3" style="z-index: 2000;"></div>
+
+  <!-- Session/Connection Modal -->
+  <div class="modal fade" id="disconnectModal" tabindex="-1" aria-labelledby="disconnectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="disconnectModalLabel">قطع ارتباط کاربر</h5>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0" id="disconnectModalText">ارتباط شما با سامانه قطع شده است.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" id="disconnectRetryBtn">تلاش مجدد</button>
+          <a href="/login" class="btn btn-primary d-none" id="disconnectLoginBtn">ورود مجدد</a>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </body>
 </html>

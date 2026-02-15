@@ -556,12 +556,265 @@ function showToast(message, variant="success"){
   }
 }
 
-// show HTMX errors as toast
+// ----------------------------
+// Global connectivity/session handling
+// ----------------------------
+let disconnectModal = null;
+let disconnectState = "";
+
+function currentRelativeUrl(){
+  const path = window.location.pathname || "/";
+  const query = window.location.search || "";
+  return `${path}${query}`;
+}
+
+function buildLoginUrl(nextUrl){
+  const n = nextUrl || currentRelativeUrl();
+  return `/login?redirect_url=${encodeURIComponent(n)}`;
+}
+
+function ensureDisconnectModal(){
+  const modalEl = document.getElementById("disconnectModal");
+  if(!modalEl || typeof bootstrap === "undefined") return null;
+  if(!disconnectModal){
+    disconnectModal = new bootstrap.Modal(modalEl, {backdrop: "static", keyboard: false});
+  }
+  return disconnectModal;
+}
+
+function showDisconnectModal({reason, message, loginUrl="", allowLogin=false, allowRetry=true}){
+  const modalEl = document.getElementById("disconnectModal");
+  if(!modalEl){
+    showToast(message || "ارتباط با سامانه قطع شد.", "danger");
+    return;
+  }
+
+  if(disconnectState === reason) return;
+  disconnectState = reason || "disconnected";
+
+  const textEl = document.getElementById("disconnectModalText");
+  if(textEl) textEl.textContent = message || "ارتباط با سامانه قطع شده است.";
+
+  const loginBtn = document.getElementById("disconnectLoginBtn");
+  if(loginBtn){
+    loginBtn.href = loginUrl || buildLoginUrl(currentRelativeUrl());
+    loginBtn.classList.toggle("d-none", !allowLogin);
+  }
+
+  const retryBtn = document.getElementById("disconnectRetryBtn");
+  if(retryBtn){
+    retryBtn.classList.toggle("d-none", !allowRetry);
+    retryBtn.onclick = ()=>window.location.reload();
+  }
+
+  const m = ensureDisconnectModal();
+  if(m) m.show();
+}
+
+function handleSessionExpired(loginUrl){
+  const target = loginUrl || buildLoginUrl(currentRelativeUrl());
+  showToast("نشست شما منقضی شده و ارتباط کاربر قطع شده است. دوباره وارد شوید.", "warning");
+  showDisconnectModal({
+    reason: "session_expired",
+    message: "نشست شما منقضی شده است. برای ادامه، دوباره وارد شوید.",
+    loginUrl: target,
+    allowLogin: true,
+    allowRetry: false,
+  });
+}
+
+function handleConnectionLost(){
+  showToast("ارتباط با سرور قطع شده است.", "danger");
+  showDisconnectModal({
+    reason: "connection_lost",
+    message: "اتصال شما به سرور قطع شده است. پس از برقراری ارتباط، دوباره تلاش کنید.",
+    allowLogin: false,
+    allowRetry: true,
+  });
+}
+
+function getXhrHeader(xhr, name){
+  try{
+    return xhr?.getResponseHeader?.(name) || "";
+  }catch(e){
+    return "";
+  }
+}
+
 document.body.addEventListener("htmx:responseError", (e)=>{
+  const xhr = e?.detail?.xhr;
+  const status = Number(xhr?.status || 0);
+  const sessionHeader = getXhrHeader(xhr, "X-Session-Expired");
+  if(status === 401 || sessionHeader === "1"){
+    const loginUrl = buildLoginUrl(currentRelativeUrl());
+    handleSessionExpired(loginUrl);
+    return;
+  }
   showToast("خطا در ارتباط با سرور", "danger");
 });
-document.body.addEventListener("htmx:sendError", (e)=>{
-  showToast("ارسال درخواست ناموفق بود", "danger");
+
+document.body.addEventListener("htmx:sendError", ()=>{
+  handleConnectionLost();
+});
+
+window.addEventListener("offline", ()=>{
+  handleConnectionLost();
+});
+
+(function setupFetchSessionGuard(){
+  if(typeof window.fetch !== "function") return;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init={}){
+    const req = Object.assign({}, init || {});
+    const rawUrl = (typeof input === "string") ? input : (input?.url || "");
+    let isSameOrigin = true;
+    try{
+      const u = new URL(rawUrl, window.location.origin);
+      isSameOrigin = (u.origin === window.location.origin);
+    }catch(e){
+      isSameOrigin = true;
+    }
+
+    const headers = new Headers(req.headers || {});
+    if(isSameOrigin && !headers.has("X-Requested-With")){
+      headers.set("X-Requested-With", "fetch");
+    }
+    req.headers = headers;
+    if(isSameOrigin && !req.credentials){
+      req.credentials = "same-origin";
+    }
+
+    let response;
+    try{
+      response = await originalFetch(input, req);
+    }catch(err){
+      handleConnectionLost();
+      throw err;
+    }
+
+    const sessionHeader = response.headers.get("X-Session-Expired");
+    if(response.status === 401 || sessionHeader === "1"){
+      handleSessionExpired(buildLoginUrl(currentRelativeUrl()));
+    }
+
+    return response;
+  };
+})();
+
+// ----------------------------
+// Real-time session monitor (WebSocket + health endpoints)
+// ----------------------------
+let sessionWs = null;
+let wsReconnectTimer = null;
+let authHealthTimer = null;
+let wsBackoffMs = 2000;
+let pageUnloading = false;
+
+function isAuthenticatedPage(){
+  const authed = !!window.__IS_AUTHENTICATED__;
+  const path = window.location.pathname || "";
+  return authed && !path.startsWith("/login");
+}
+
+function getSessionWsUrl(){
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws/session`;
+}
+
+function connectSessionSocket(){
+  if(!isAuthenticatedPage()) return;
+  if(disconnectState === "session_expired") return;
+  if(sessionWs && (sessionWs.readyState === WebSocket.OPEN || sessionWs.readyState === WebSocket.CONNECTING)) return;
+
+  try{
+    sessionWs = new WebSocket(getSessionWsUrl());
+  }catch(e){
+    handleConnectionLost();
+    return;
+  }
+
+  sessionWs.onopen = ()=>{
+    wsBackoffMs = 2000;
+  };
+
+  sessionWs.onmessage = (event)=>{
+    let data = null;
+    try{
+      data = JSON.parse(event.data || "{}");
+    }catch(e){
+      return;
+    }
+    if(data && data.type === "error" && (data.reason === "session_expired" || data.reason === "unauthorized")){
+      handleSessionExpired(buildLoginUrl(currentRelativeUrl()));
+      try{ sessionWs.close(); }catch(e){}
+    }
+  };
+
+  sessionWs.onclose = (event)=>{
+    sessionWs = null;
+    if(pageUnloading) return;
+    if(!isAuthenticatedPage()) return;
+    if(disconnectState === "session_expired") return;
+    if(event.code === 4401){
+      handleSessionExpired(buildLoginUrl(currentRelativeUrl()));
+      return;
+    }
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(connectSessionSocket, wsBackoffMs);
+    wsBackoffMs = Math.min(Math.floor(wsBackoffMs * 1.5), 20000);
+  };
+
+  sessionWs.onerror = ()=>{
+    // onclose handles reconnect/backoff.
+  };
+}
+
+async function pollHealthEndpoints(){
+  if(!isAuthenticatedPage()) return;
+  if(disconnectState === "session_expired") return;
+
+  try{
+    const healthRes = await fetch(`/health?_=${Date.now()}`, {cache: "no-store"});
+    if(!healthRes.ok){
+      handleConnectionLost();
+      return;
+    }
+  }catch(e){
+    handleConnectionLost();
+    return;
+  }
+
+  // fetch wrapper handles 401 from /health/auth and triggers session-expired modal.
+  try{
+    await fetch(`/health/auth?_=${Date.now()}`, {cache: "no-store"});
+  }catch(e){
+    // fetch wrapper already shows connection state.
+  }
+}
+
+function startRealtimeSessionMonitor(){
+  if(!isAuthenticatedPage()) return;
+  connectSessionSocket();
+  if(!authHealthTimer){
+    authHealthTimer = setInterval(pollHealthEndpoints, 10000);
+  }
+  setTimeout(pollHealthEndpoints, 1800);
+}
+
+window.addEventListener("beforeunload", ()=>{
+  pageUnloading = true;
+  clearTimeout(wsReconnectTimer);
+  if(authHealthTimer){
+    clearInterval(authHealthTimer);
+    authHealthTimer = null;
+  }
+  if(sessionWs){
+    try{ sessionWs.close(1000, "page_unload"); }catch(e){}
+  }
+});
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  startRealtimeSessionMonitor();
 });
 
 // Global loading overlay for HTMX requests

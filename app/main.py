@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import time
 import logging
+import asyncio
+from urllib.parse import quote
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -17,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_session
 from app.db.base import Base
 from app.db.session import engine, SessionLocal, get_db
 from app.auth.deps import get_current_user
@@ -48,6 +50,21 @@ logger = logging.getLogger("water_compat")
 
 def _is_hx(request: Request) -> bool:
     return (request.headers.get("hx-request") or "").lower() == "true"
+
+
+def _is_fetch_request(request: Request) -> bool:
+    return (request.headers.get("x-requested-with") or "").lower() == "fetch"
+
+
+def _request_path_with_query(request: Request) -> str:
+    path = request.url.path or "/"
+    query = request.url.query or ""
+    return f"{path}?{query}" if query else path
+
+
+def _login_redirect_url(request: Request) -> str:
+    next_url = quote(_request_path_with_query(request), safe="")
+    return f"/login?redirect_url={next_url}"
 
 
 def _wants_html(request: Request) -> bool:
@@ -139,12 +156,25 @@ async def http_exc_handler(request: Request, exc: HTTPException):
 
     # 401: redirect to login (works for both normal and HTMX)
     if exc.status_code == 401:
+        login_url = _login_redirect_url(request)
         if hx:
             resp = HTMLResponse("", status_code=401)
-            resp.headers["HX-Redirect"] = "/login"
+            resp.headers["X-Session-Expired"] = "1"
+            resp.headers["X-Login-Url"] = login_url
             resp.delete_cookie("sid")
             return resp
-        resp = RedirectResponse("/login", status_code=303)
+
+        if _is_fetch_request(request):
+            resp = JSONResponse(
+                status_code=401,
+                content={"detail": "Session expired", "login_url": login_url},
+            )
+            resp.headers["X-Session-Expired"] = "1"
+            resp.headers["X-Login-Url"] = login_url
+            resp.delete_cookie("sid")
+            return resp
+
+        resp = RedirectResponse(login_url, status_code=303)
         resp.delete_cookie("sid")
         return resp
 
@@ -218,6 +248,62 @@ def on_startup():
 @app.get("/health", response_class=JSONResponse)
 def health():
     return {"status": "ok", "app": settings.APP_NAME}
+
+
+@app.get("/health/auth", response_class=JSONResponse)
+def health_auth(user=Depends(get_current_user)):
+    return {"status": "ok", "authenticated": True, "user_id": user.id}
+
+
+@app.websocket("/ws/session")
+async def ws_session(websocket: WebSocket):
+    await websocket.accept()
+    token = websocket.cookies.get("sid")
+    payload = verify_session(token) if token else None
+    user_id = payload.get("user_id") if payload else None
+
+    if not user_id:
+        await websocket.send_json({"type": "error", "reason": "unauthorized"})
+        await websocket.close(code=4401)
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if not user or (hasattr(user, "is_active") and not user.is_active):
+            await websocket.send_json({"type": "error", "reason": "unauthorized"})
+            await websocket.close(code=4401)
+            return
+
+        await websocket.send_json({"type": "ready", "user_id": user_id})
+
+        while True:
+            await asyncio.sleep(12)
+
+            # Re-check session validity (expiration/revocation semantics by signature+max_age).
+            if not verify_session(token):
+                await websocket.send_json({"type": "error", "reason": "session_expired"})
+                await websocket.close(code=4401)
+                break
+
+            user = db.get(User, user_id)
+            if not user or (hasattr(user, "is_active") and not user.is_active):
+                await websocket.send_json({"type": "error", "reason": "unauthorized"})
+                await websocket.close(code=4401)
+                break
+
+            await websocket.send_json({"type": "ping", "ts": int(time.time())})
+
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        logger.exception("Session websocket error")
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 @app.get("/", response_class=HTMLResponse)
