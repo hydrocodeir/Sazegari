@@ -72,11 +72,6 @@
       <div class="sidebar-section mt-2">
         <div class="sidebar-caption">مدیریت</div>
 
-        {% if user and user.role and user.role.value == 'secretariat_admin' %}
-        <a class="sidebar-link {% if request.url.path.startswith('/programs') %}active{% endif %}" href="/programs">
-          <i class="bi bi-table"></i><span>پایش برنامه</span>
-        </a>
-        {% endif %}
         {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/orgs') %}active{% endif %}" href="/orgs">
@@ -93,6 +88,11 @@
 
         <a class="sidebar-link {% if request.url.path.startswith('/org-counties') %}active{% endif %}" href="/org-counties">
           <i class="bi bi-link-45deg"></i><span>ارگان↔شهرستان</span>
+        </a>
+        {% endif %}
+        {% if user and user.role and user.role.value == 'secretariat_admin' %}
+        <a class="sidebar-link {% if request.url.path.startswith('/programs') %}active{% endif %}" href="/programs">
+          <i class="bi bi-table"></i><span>پایش برنامه</span>
         </a>
         {% endif %}
         {% if user and can_view_forms(user) %}

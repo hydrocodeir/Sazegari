@@ -25,11 +25,12 @@ _H_NAMES = {1: "اول", 2: "دوم"}
 def period_label(year: int, period_type: str, period_no: int) -> str:
     pt = (period_type or "").strip().lower()
     if pt == "quarter":
-        return f"سه‌ماهه {_Q_NAMES.get(int(period_no), str(period_no))} سال {year}"
+        # Match the wording used in the sample Excel (e.g., "سه ماه اول سال 1404").
+        return f"سه ماه {_Q_NAMES.get(int(period_no), str(period_no))} سال {year}"
     if pt == "half":
-        return f"شش‌ماهه {_H_NAMES.get(int(period_no), str(period_no))} سال {year}"
+        return f"شش ماه {_H_NAMES.get(int(period_no), str(period_no))} سال {year}"
     if pt == "year":
-        return f"سالانه سال {year}"
+        return f"سال {year}"
     return f"بازه {period_no} سال {year}"
 
 
@@ -309,6 +310,15 @@ def build_program_report(
             }
         )
 
+
+    # Header label for the target column (Excel sample shows "هدف تا 1405")
+    end_years = {int(br.end_year) for br in baseline_rows if getattr(br, "end_year", None)}
+    target_header = "هدف تا سال پیش‌بینی خاتمه"
+    if len(end_years) == 1:
+        target_header = f"هدف تا {next(iter(end_years))}"
+
+    current_perf_label = f"عملکرد {current_label}"
+
     return {
         "form_type": {"id": t.id, "title": t.title},
         "mode": mode,
@@ -317,6 +327,8 @@ def build_program_report(
         "period_type": pt,
         "period_no": pn,
         "current_label": current_label,
+        "current_perf_label": current_perf_label,
+        "target_header": target_header,
         # for templates
         "year_cols": year_cols,
         # backward compatibility
