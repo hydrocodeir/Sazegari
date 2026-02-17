@@ -35,23 +35,54 @@ except Exception:  # pragma: no cover
     get_display = None
 
 
+
+_ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
+_URLISH_RE = re.compile(r"(https?://\S+|/uploads/\S+|[\w.+-]+@[\w-]+\.[\w.-]+)")
+
+
 def rtl(text: str) -> str:
-    """Convert RTL (Persian/Arabic) text to visual order for ReportLab.
-    Keeps URLs/path-like strings as-is.
+    """Convert RTL (Persian/Arabic) text to *visual* order for ReportLab.
+
+    ReportLab does not perform Arabic/Persian shaping by itself. We therefore:
+    1) reshape (connect) letters, then
+    2) apply the bidi algorithm to obtain a visually-correct string.
+
+    For purely LTR strings (IDs, filenames, codes, ...), we keep the text as-is.
     """
-    if not text:
+    if text is None:
         return ""
     t = str(text)
-    # Don't reshape URLs / file paths
-    if "http://" in t or "https://" in t or "/uploads/" in t:
+    if not t:
+        return ""
+
+    # Pure LTR strings: keep as-is (prevents reversing filenames/IDs)
+    if not _ARABIC_RE.search(t):
         return t
-    if arabic_reshaper and get_display:
-        try:
-            reshaped = arabic_reshaper.reshape(t)
-            return get_display(reshaped)
-        except Exception:
-            return t
-    return t
+
+    if not (arabic_reshaper and get_display):
+        return t
+
+    # Protect URLs / upload paths / emails so bidi doesn't mangle them
+    placeholders: dict[str, str] = {}
+
+    def _protect(m: re.Match[str]) -> str:
+        key = f"__URL{len(placeholders)}__"
+        placeholders[key] = m.group(0)
+        return key
+
+    protected = _URLISH_RE.sub(_protect, t)
+
+    try:
+        reshaped = arabic_reshaper.reshape(protected)
+        visual = get_display(reshaped)
+    except Exception:
+        visual = protected
+
+    # Restore protected chunks (wrap with LRM to keep LTR readable inside RTL)
+    for key, val in placeholders.items():
+        visual = visual.replace(key, f"\u200E{val}\u200E")
+
+    return visual
 
 
 class _QuillHTMLToRL(HTMLParser):
@@ -206,36 +237,84 @@ class _CKHtmlToFlowables(HTMLParser):
         self._cell_is_header = False
         return para
 
-    def _finalize_table(self):
-        if not self._table_rows:
-            return
-        cols = max((len(r) for r in self._table_rows), default=0)
-        if cols <= 0:
-            return
-        # Pad rows
-        padded: list[list[Any]] = []
-        for r in self._table_rows:
-            row = list(r)
-            while len(row) < cols:
-                row.append(Paragraph("", self.cell_style))
-            padded.append(row)
+    
+def _finalize_table(self):
+    if not self._table_rows:
+        return
+    cols = max((len(r) for r in self._table_rows), default=0)
+    if cols <= 0:
+        return
 
-        widths = [self.max_width / cols] * cols
-        t = Table(padded, colWidths=widths, hAlign="RIGHT")
-        # Style: header row background if first row includes header cells
-        tstyle = [
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-            ("LEFTPADDING", (0, 0), (-1, -1), 10),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    # Pad rows to same column count
+    padded: list[list[Any]] = []
+    for r in self._table_rows:
+        row = list(r)
+        while len(row) < cols:
+            row.append(Paragraph("", self.cell_style))
+        padded.append(row)
+
+    # Detect a header row (usually <th> in first row)
+    has_header = False
+    if padded:
+        for c in padded[0]:
+            try:
+                if isinstance(c, Paragraph) and getattr(getattr(c, "style", None), "fontName", "") == self.font_bold:
+                    has_header = True
+                    break
+            except Exception:
+                continue
+
+    # RTL-friendly tables: show the first logical column on the right
+    padded = [list(reversed(r)) for r in padded]
+
+    # Smarter column widths: proportional to content (with a reasonable minimum)
+    lens = [1] * cols
+    for r in padded:
+        for idx, cell in enumerate(r):
+            try:
+                txt = cell.getPlainText() if hasattr(cell, "getPlainText") else str(cell)
+            except Exception:
+                txt = ""
+            txt = (txt or "").strip()
+            if txt:
+                lens[idx] = max(lens[idx], len(txt))
+
+    total = sum(lens) or cols
+    min_w = 2.0 * cm
+    widths = [max(min_w, self.max_width * (l / total)) for l in lens]
+    s = sum(widths)
+    if s > 0:
+        scale = self.max_width / s
+        widths = [w * scale for w in widths]
+
+    t = Table(padded, colWidths=widths, hAlign="RIGHT", repeatRows=1 if has_header else 0)
+    t.splitByRow = 1
+
+    tstyle = [
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]
+
+    start_row = 0
+    if has_header:
+        tstyle += [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6f8fa")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#24292f")),
         ]
-        t.setStyle(TableStyle(tstyle))
-        self.flowables.append(t)
-        self.flowables.append(Spacer(1, 6))
-        self._table_rows = []
+        start_row = 1
+
+    # Zebra rows for readability
+    tstyle.append(("ROWBACKGROUNDS", (0, start_row), (-1, -1), [colors.white, colors.HexColor("#fbfbfc")]))
+
+    t.setStyle(TableStyle(tstyle))
+    self.flowables.append(t)
+    self.flowables.append(Spacer(1, 6))
+    self._table_rows = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         tag = (tag or "").lower()
@@ -401,25 +480,28 @@ def html_to_flowables(
         return out
 
 
+
 def _register_font() -> tuple[str, str]:
-    """Try register a Persian-capable font.
+    """Register a Persian-capable font and return (regular, bold) font names.
 
-    Returns:
-      (regular_font_name, bold_font_name)
+    Preferred: Vazirmatn (embedded in the project).
+      - app/static/fonts/Vazirmatn-Regular.ttf
+      - app/static/fonts/Vazirmatn-Bold.ttf
 
-    Preferred: Vazirmatn (local files in app/static/fonts)
-    Fallback: DejaVu Sans (system)
+    If only the variable font exists (front-end asset):
+      - app/static/css/fonts/Vazirmatn[wght].ttf
+    we try to instantiate Regular/Bold into a temporary folder.
+
+    Fallback: DejaVu Sans (system) -> Helvetica.
     """
 
-    # 1) Local Vazirmatn (recommended)
-    try:
-        fonts_dir = Path(__file__).resolve().parent.parent / "static" / "fonts"
-        reg = fonts_dir / "Vazirmatn-Regular.ttf"
-        bold = fonts_dir / "Vazirmatn-Bold.ttf"
-        if reg.exists():
-            pdfmetrics.registerFont(TTFont("Vazirmatn", str(reg)))
-            if bold.exists():
-                pdfmetrics.registerFont(TTFont("Vazirmatn-Bold", str(bold)))
+    def _try_register_pair(reg_path: Path, bold_path: Path | None) -> tuple[str, str] | None:
+        try:
+            pdfmetrics.registerFont(TTFont("Vazirmatn", str(reg_path)))
+            bold_name = "Vazirmatn"
+            if bold_path and bold_path.exists():
+                pdfmetrics.registerFont(TTFont("Vazirmatn-Bold", str(bold_path)))
+                bold_name = "Vazirmatn-Bold"
                 try:
                     pdfmetrics.registerFontFamily(
                         "Vazirmatn",
@@ -430,12 +512,53 @@ def _register_font() -> tuple[str, str]:
                     )
                 except Exception:
                     pass
-                return ("Vazirmatn", "Vazirmatn-Bold")
-            return ("Vazirmatn", "Vazirmatn")
+            return ("Vazirmatn", bold_name)
+        except Exception:
+            return None
+
+    # 1) Embedded static fonts (best)
+    try:
+        static_dir = Path(__file__).resolve().parent.parent / "static" / "fonts"
+        reg = static_dir / "Vazirmatn-Regular.ttf"
+        bold = static_dir / "Vazirmatn-Bold.ttf"
+        if reg.exists():
+            out = _try_register_pair(reg, bold if bold.exists() else None)
+            if out:
+                return out
     except Exception:
         pass
 
-    # 2) System DejaVu Sans
+    # 2) Variable font from front-end assets -> instantiate on the fly (robust fallback)
+    try:
+        var_dir = Path(__file__).resolve().parent.parent / "static" / "css" / "fonts"
+        var_font = var_dir / "Vazirmatn[wght].ttf"
+        if var_font.exists():
+            tmp_dir = Path("/tmp/sazegari_fonts")
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            reg_out = tmp_dir / "Vazirmatn-Regular.ttf"
+            bold_out = tmp_dir / "Vazirmatn-Bold.ttf"
+
+            if not (reg_out.exists() and bold_out.exists()):
+                try:
+                    from fontTools.ttLib import TTFont as _FTFont
+                    from fontTools.varLib.instancer import instantiateVariableFont as _inst
+
+                    f1 = _FTFont(str(var_font))
+                    _inst(f1, {"wght": 400}, inplace=False).save(str(reg_out))
+                    f2 = _FTFont(str(var_font))
+                    _inst(f2, {"wght": 700}, inplace=False).save(str(bold_out))
+                except Exception:
+                    # If fontTools isn't available in runtime, we'll just try to register variable font.
+                    reg_out = var_font
+                    bold_out = var_font
+
+            out = _try_register_pair(reg_out, bold_out if bold_out.exists() else None)
+            if out:
+                return out
+    except Exception:
+        pass
+
+    # 3) System DejaVu Sans
     candidates = [
         ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
         ("DejaVuSans", "/usr/share/fonts/dejavu/DejaVuSans.ttf"),
@@ -446,6 +569,7 @@ def _register_font() -> tuple[str, str]:
             return (name, name)
         except Exception:
             continue
+
     return ("Helvetica", "Helvetica")
 
 
@@ -518,6 +642,7 @@ def build_report_pdf(
         fontSize=10,
         leading=15,
         alignment=TA_RIGHT,
+        splitLongWords=1,
     )
     h1 = ParagraphStyle(
         name="H1",
@@ -536,12 +661,26 @@ def build_report_pdf(
         leading=18,
         spaceBefore=10,
         spaceAfter=6,
+        keepWithNext=1,
     )
     small = ParagraphStyle(
         name="Small",
         parent=base,
         fontSize=9,
         leading=13,
+    )
+
+
+    tbl_cell = ParagraphStyle(
+        name="TblCell",
+        parent=small,
+        alignment=TA_RIGHT,
+    )
+    tbl_head = ParagraphStyle(
+        name="TblHead",
+        parent=small,
+        fontName=font_bold,
+        alignment=TA_RIGHT,
     )
 
     from io import BytesIO
@@ -605,6 +744,7 @@ def build_report_pdf(
     )
 
     portrait_usable_w = portrait_ps[0] - left_m - right_m
+    portrait_usable_w_cm = float(portrait_usable_w / cm)
     landscape_usable_w = landscape_ps[0] - left_m - right_m
     landscape_usable_w_cm = float(landscape_usable_w / cm)
 
@@ -648,7 +788,7 @@ def build_report_pdf(
     # 1) Intro
     story.append(Paragraph(rtl("۱) متن ابتدایی"), h2))
     intro_html = doc.get("intro_html") or ""
-    intro_flow = html_to_flowables(intro_html, base, font_name, font_bold)
+    intro_flow = html_to_flowables(intro_html, base, font_name, font_bold, max_width_cm=portrait_usable_w_cm)
     if intro_flow:
         story.extend(intro_flow)
     else:
@@ -658,11 +798,14 @@ def build_report_pdf(
     story.append(Spacer(1, 6))
     story.append(Paragraph(rtl("پیوست‌ها"), h2))
     if attachments:
-        rows = [[rtl("فایل"), rtl("آپلودکننده")]]
+        rows = [[Paragraph(xml_escape(rtl("فایل")), tbl_head), Paragraph(xml_escape(rtl("آپلودکننده")), tbl_head)]]
         for a in attachments:
             up = uploader_map.get(getattr(a, "uploaded_by_id", 0), str(getattr(a, "uploaded_by_id", "")))
-            rows.append([rtl(getattr(a,'filename','')), rtl(up)])
-        at = Table(rows, colWidths=[11*cm, 4*cm])
+            rows.append([
+                Paragraph(xml_escape(rtl(getattr(a, 'filename', ''))), tbl_cell),
+                Paragraph(xml_escape(rtl(up)), tbl_cell),
+            ])
+        at = Table(rows, colWidths=[11*cm, 4*cm], repeatRows=1)
         at.setStyle(TableStyle([
             ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
             ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
@@ -759,6 +902,10 @@ def build_report_pdf(
                         else:
                             row_cells.append(Paragraph("", land_cell))
 
+                    # RTL: first field should appear on the right
+                    if cols > 1:
+                        row_cells = list(reversed(row_cells))
+
                     if cols == 1:
                         widths = [total_w]
                     elif cols == 3:
@@ -846,7 +993,7 @@ def build_report_pdf(
     story.append(PageBreak())
     story.append(Paragraph(rtl("۳) نتیجه‌گیری و نتایج"), h2))
     concl_html = doc.get("conclusion_html") or ""
-    concl_flow = html_to_flowables(concl_html, base, font_name, font_bold)
+    concl_flow = html_to_flowables(concl_html, base, font_name, font_bold, max_width_cm=portrait_usable_w_cm)
     if concl_flow:
         story.extend(concl_flow)
     else:
