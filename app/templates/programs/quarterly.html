@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block page_title %}{{ q_label }} - {{ t.title }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <div class="text-muted small">فرم سه‌ماهه</div>
+    <h4 class="mb-0">{{ t.title }}</h4>
+    <div class="small text-muted mt-1">{{ q_label }}</div>
+  </div>
+  <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}"><i class="bi bi-arrow-right"></i> بازگشت</a>
+</div>
+
+{% if saved %}
+  <div class="alert alert-success">اطلاعات سه‌ماهه ذخیره شد و گزارش به‌روزرسانی گردید.</div>
+{% endif %}
+
+<div class="card p-3 border-0 shadow-sm">
+  <h6 class="mb-2">ورود داده سه‌ماهه</h6>
+  <div class="text-muted small mb-3">
+    برای ردیف‌هایی که داده ندارند، مقدار را خالی بگذارید (در محاسبات ۰ لحاظ می‌شود).
+  </div>
+
+  <form method="post" action="/programs/{{ t.id }}/quarterly?year={{ year }}&quarter={{ quarter }}">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th style="width:60px;">ردیف</th>
+            <th>عنوان</th>
+            <th style="width:120px;">واحد</th>
+            <th style="width:160px;">نتیجه همین سه‌ماهه</th>
+            <th style="min-width:260px;">اقدامات/شرح اقدامات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for br in baseline_rows %}
+          {% set pr = qrows_map.get(br.id) %}
+          <tr>
+            <td class="text-muted">{{ br.row_no }}</td>
+            <td>{{ br.title }}</td>
+            <td class="text-muted">{{ br.unit }}</td>
+            <td>
+              <input type="hidden" name="row_id" value="{{ br.id }}">
+              <input class="form-control form-control-sm" name="result_value" type="number" step="any" value="{{ pr.result_value if pr and pr.result_value is not none else '' }}">
+            </td>
+            <td>
+              <textarea class="form-control form-control-sm" name="actions_text" rows="2" placeholder="اقدامات این سه‌ماهه...">{{ pr.actions_text if pr else '' }}</textarea>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="d-flex justify-content-end">
+      <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> ذخیره و تولید گزارش</button>
+    </div>
+  </form>
+</div>
+
+
+<div class="card p-3 border-0 shadow-sm mt-3">
+  <h6 class="mb-3">گزارش سه‌ماهه (نمایش شبیه اکسل)</h6>
+
+  <div class="mb-3">
+    <div class="fw-semibold mb-1">مقدمه</div>
+    <div class="text-muted small" style="white-space:pre-wrap;">{{ t.intro_text }}</div>
+  </div>
+
+  {% if not report %}
+    <div class="text-muted">برای تولید جدول، ابتدا برنامه پایش و حداقل یک ردیف را ثبت کنید.</div>
+  {% else %}
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ردیف</th>
+            <th>عنوان پروژه/ردیف</th>
+            <th>واحد</th>
+            <th>سال شروع</th>
+            <th>سال پیش‌بینی خاتمه</th>
+            <th>هدف تا سال پیش‌بینی خاتمه</th>
+
+            {% for y in report.years %}
+              <th>عملکرد سال {{ y }}</th>
+            {% endfor %}
+
+            <th>{{ report.current_label }}</th>
+            <th style="min-width:260px;">اقدامات از ابتدای برنامه تا پایان سه‌ماهه جاری</th>
+            <th>عملکرد تجمعی از ابتدای برنامه تا پایان سه‌ماهه جاری</th>
+            <th>درصد پیشرفت کلی برنامه</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in report.rows %}
+          <tr>
+            <td>{{ r.row_no }}</td>
+            <td>{{ r.title }}</td>
+            <td>{{ r.unit }}</td>
+            <td>{{ r.start_year }}</td>
+            <td>{{ r.end_year }}</td>
+            <td>{{ fmt_num(r.target_value) }}</td>
+
+            {% for y in report.years %}
+              <td>{{ r.annual[y] }}</td>
+            {% endfor %}
+
+            <td>{{ r.current_q }}</td>
+            <td style="white-space:pre-wrap;">{{ r.actions_agg }}</td>
+            <td>{{ fmt_num(r.cumulative) }}</td>
+            <td>
+              {% if r.target_value and r.target_value > 0 %}
+                {{ (r.progress * 100) | round(2) }}%
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <div class="mt-3">
+    <div class="fw-semibold mb-1">نتیجه‌گیری</div>
+    <div class="text-muted small" style="white-space:pre-wrap;">{{ t.conclusion_text }}</div>
+  </div>
+</div>
+
+{% endblock %}

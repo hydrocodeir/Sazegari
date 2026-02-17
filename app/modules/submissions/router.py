@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Request, Depends, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import exists, or_
 
 from app.db.session import get_db
 from app.core.config import settings
@@ -17,6 +18,10 @@ from app.db.models.county import County
 from app.db.models.user import Role
 from app.db.models.submission import Submission
 from app.db.models.org_county import OrgCountyUnit
+from app.db.models.program_form_type import ProgramFormType
+from app.db.models.program_baseline import ProgramBaseline, ProgramBaselineRow
+from app.db.models.program_period import ProgramPeriodForm, ProgramPeriodRow
+from app.db.models.program_period_year_mode import ProgramPeriodYearMode
 from app.utils.schema import parse_schema, validate_payload, build_layout_blueprint
 from app.utils.badges import get_badge_count
 
@@ -27,6 +32,55 @@ UPLOAD_DIR = settings.UPLOAD_DIR
 
 def _parse_schema(schema_text: str) -> dict:
     return parse_schema(schema_text)
+
+
+def _require_program_user(user):
+    require(
+        user
+        and user.role
+        in (
+            Role.ORG_PROV_EXPERT,
+            Role.ORG_PROV_MANAGER,
+            Role.ORG_COUNTY_EXPERT,
+            Role.ORG_COUNTY_MANAGER,
+        ),
+        "این بخش فقط برای کارشناسان/مدیران استان و شهرستان قابل مشاهده است.",
+        403,
+    )
+
+
+def _scope_county_id(user) -> int:
+    """Scope key for program monitoring (0=province, >0=county)."""
+    if user and user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER):
+        require(user.county_id is not None, "برای کاربران شهرستان، شهرستان مشخص نیست.", 400)
+        return int(user.county_id)
+    return 0
+
+
+def _validate_period(period_type: str, period_no: int):
+    pt = (period_type or "").strip().lower()
+    require(pt in ("quarter", "half", "year"), "نوع بازه نامعتبر است.", 400)
+    pn = int(period_no)
+    if pt == "quarter":
+        require(pn in (1, 2, 3, 4), "شماره سه‌ماهه نامعتبر است.", 400)
+    elif pt == "half":
+        require(pn in (1, 2), "شماره شش‌ماهه نامعتبر است.", 400)
+    else:
+        require(pn == 1, "برای بازه سالانه، شماره باید 1 باشد.", 400)
+    return pt, pn
+
+
+def _period_label(year: int, period_type: str, period_no: int) -> str:
+    q = {1: "اول", 2: "دوم", 3: "سوم", 4: "چهارم"}
+    h = {1: "اول", 2: "دوم"}
+    pt = (period_type or "").strip().lower()
+    if pt == "quarter":
+        return f"سه‌ماهه {q.get(period_no, str(period_no))} سال {year}"
+    if pt == "half":
+        return f"شش‌ماهه {h.get(period_no, str(period_no))} سال {year}"
+    if pt == "year":
+        return f"سالانه سال {year}"
+    return f"بازه {period_no} سال {year}"
 
 
 
@@ -402,6 +456,367 @@ async def create(
     db.refresh(s)
 
     return RedirectResponse(f"/submissions/{s.id}", status_code=303)
+
+
+# -----------------------------------------------------------------------------
+# Program monitoring data entry (periodic: quarter/half/year)
+# -----------------------------------------------------------------------------
+
+
+def _safe_float(v: str | None):
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+@router.get("/program", response_class=HTMLResponse)
+def program_select_page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    require(can_submit_data(user))
+    _require_program_user(user)
+
+    scope_county_id = _scope_county_id(user)
+
+    types = (
+        db.query(ProgramFormType)
+        .filter(ProgramFormType.org_id == user.org_id)
+        .order_by(ProgramFormType.title.asc())
+        .all()
+    )
+
+    # History of previously saved period forms for this user's scope (province or their county)
+    # We only show records that contain at least one non-empty row (to avoid clutter from auto-created empty forms).
+    non_empty_row_exists = exists().where(
+        (ProgramPeriodRow.period_form_id == ProgramPeriodForm.id)
+        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != ""))
+    )
+
+    history_forms = (
+        db.query(ProgramPeriodForm)
+        .filter(
+            ProgramPeriodForm.org_id == user.org_id,
+            ProgramPeriodForm.county_id == scope_county_id,
+            non_empty_row_exists,
+        )
+        .order_by(ProgramPeriodForm.year.desc(), ProgramPeriodForm.id.desc())
+        .limit(200)
+        .all()
+    )
+
+    type_title_by_id = {t.id: t.title for t in types}
+    history = [
+        {
+            "id": pf.id,
+            "type_id": pf.form_type_id,
+            "type_title": type_title_by_id.get(pf.form_type_id, "-"),
+            "year": pf.year,
+            "period_type": pf.period_type,
+            "period_no": pf.period_no,
+            "period_label": _period_label(pf.year, pf.period_type, pf.period_no),
+        }
+        for pf in history_forms
+    ]
+
+    return request.app.state.templates.TemplateResponse(
+        "submissions/program_select.html",
+        {
+            "request": request,
+            "user": user,
+            "badge_count": get_badge_count(db, user),
+            "types": types,
+            "history": history,
+            "scope_county_id": scope_county_id,
+        },
+    )
+
+
+@router.get("/program/entry", response_class=HTMLResponse)
+def program_entry_page(
+    request: Request,
+    type_id: int,
+    year: int,
+    period_type: str,
+    period_no: int,
+    saved: int = 0,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    require(can_submit_data(user))
+    _require_program_user(user)
+
+    scope_county_id = _scope_county_id(user)
+
+    pt, pn = _validate_period(period_type, period_no)
+    t = db.get(ProgramFormType, int(type_id))
+    require(t is not None and t.org_id == user.org_id, "تیپ فرم یافت نشد.", 404)
+
+    baseline = (
+        db.query(ProgramBaseline)
+        .filter(ProgramBaseline.org_id == user.org_id, ProgramBaseline.form_type_id == t.id)
+        .first()
+    )
+    require(baseline is not None, "ابتدا فرم اولیه/هدف برنامه پایش را تکمیل کنید.", 400)
+
+    baseline_rows = (
+        db.query(ProgramBaselineRow)
+        .filter(ProgramBaselineRow.baseline_id == baseline.id)
+        .order_by(ProgramBaselineRow.row_no.asc(), ProgramBaselineRow.id.asc())
+        .all()
+    )
+    require(len(baseline_rows) > 0, "ابتدا ردیف‌های فرم اولیه را ثبت کنید.", 400)
+
+    # Enforce year mode lock (if already set)
+    ym = (
+        db.query(ProgramPeriodYearMode)
+        .filter(
+            ProgramPeriodYearMode.org_id == user.org_id,
+            ProgramPeriodYearMode.county_id == scope_county_id,
+            ProgramPeriodYearMode.form_type_id == t.id,
+            ProgramPeriodYearMode.year == int(year),
+        )
+        .first()
+    )
+    if ym is not None:
+        require(ym.period_type == pt, "در این سال قبلاً نوع بازه دیگری ثبت شده است و امکان ثبت ترکیبی وجود ندارد.", 400)
+
+    pf = (
+        db.query(ProgramPeriodForm)
+        .filter(
+            ProgramPeriodForm.org_id == user.org_id,
+            ProgramPeriodForm.county_id == scope_county_id,
+            ProgramPeriodForm.form_type_id == t.id,
+            ProgramPeriodForm.year == int(year),
+            ProgramPeriodForm.period_type == pt,
+            ProgramPeriodForm.period_no == pn,
+        )
+        .first()
+    )
+    if pf is None:
+        pf = ProgramPeriodForm(
+            org_id=user.org_id,
+            county_id=scope_county_id,
+            form_type_id=t.id,
+            year=int(year),
+            period_type=pt,
+            period_no=pn,
+            created_by_id=user.id,
+        )
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+
+    # Ensure per-baseline-row records exist
+    existing = db.query(ProgramPeriodRow).filter(ProgramPeriodRow.period_form_id == pf.id).all()
+    existing_map = {r.baseline_row_id: r for r in existing}
+    created_any = False
+    for br in baseline_rows:
+        if br.id not in existing_map:
+            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=br.id, result_value=None, actions_text="")
+            db.add(pr)
+            created_any = True
+    if created_any:
+        db.commit()
+
+    prows = db.query(ProgramPeriodRow).filter(ProgramPeriodRow.period_form_id == pf.id).all()
+    prows_map = {r.baseline_row_id: r for r in prows}
+
+    # Other saved periods for quick navigation (same type + same scope)
+    non_empty_row_exists = exists().where(
+        (ProgramPeriodRow.period_form_id == ProgramPeriodForm.id)
+        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != ""))
+    )
+    other_forms = (
+        db.query(ProgramPeriodForm)
+        .filter(
+            ProgramPeriodForm.org_id == user.org_id,
+            ProgramPeriodForm.county_id == scope_county_id,
+            ProgramPeriodForm.form_type_id == t.id,
+            non_empty_row_exists,
+        )
+        .order_by(ProgramPeriodForm.year.desc(), ProgramPeriodForm.id.desc())
+        .limit(100)
+        .all()
+    )
+    history_same_type = [
+        {
+            "id": x.id,
+            "year": x.year,
+            "period_type": x.period_type,
+            "period_no": x.period_no,
+            "period_label": _period_label(x.year, x.period_type, x.period_no),
+            "is_current": x.id == pf.id,
+        }
+        for x in other_forms
+    ]
+
+    return request.app.state.templates.TemplateResponse(
+        "submissions/program_entry.html",
+        {
+            "request": request,
+            "user": user,
+            "badge_count": get_badge_count(db, user),
+            "t": t,
+            "baseline": baseline,
+            "baseline_rows": baseline_rows,
+            "pf": pf,
+            "prows_map": prows_map,
+            "year": int(year),
+            "period_type": pt,
+            "period_no": pn,
+            "period_label": _period_label(int(year), pt, pn),
+            "saved": saved,
+            "history_same_type": history_same_type,
+        },
+    )
+
+
+@router.post("/program/entry", response_class=RedirectResponse)
+def program_entry_save(
+    request: Request,
+    type_id: int = Form(...),
+    year: int = Form(...),
+    period_type: str = Form(...),
+    period_no: int = Form(...),
+    row_id: list[int] = Form(...),
+    result_value: list[str] = Form(...),
+    actions_text: list[str] = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    require(can_submit_data(user))
+    _require_program_user(user)
+
+    scope_county_id = _scope_county_id(user)
+
+    pt, pn = _validate_period(period_type, period_no)
+    t = db.get(ProgramFormType, int(type_id))
+    require(t is not None and t.org_id == user.org_id, "تیپ فرم یافت نشد.", 404)
+
+    # If year mode exists, enforce it
+    ym = (
+        db.query(ProgramPeriodYearMode)
+        .filter(
+            ProgramPeriodYearMode.org_id == user.org_id,
+            ProgramPeriodYearMode.county_id == scope_county_id,
+            ProgramPeriodYearMode.form_type_id == t.id,
+            ProgramPeriodYearMode.year == int(year),
+        )
+        .first()
+    )
+    if ym is not None:
+        require(ym.period_type == pt, "در این سال قبلاً نوع بازه دیگری ثبت شده است و امکان ثبت ترکیبی وجود ندارد.", 400)
+
+    pf = (
+        db.query(ProgramPeriodForm)
+        .filter(
+            ProgramPeriodForm.org_id == user.org_id,
+            ProgramPeriodForm.county_id == scope_county_id,
+            ProgramPeriodForm.form_type_id == t.id,
+            ProgramPeriodForm.year == int(year),
+            ProgramPeriodForm.period_type == pt,
+            ProgramPeriodForm.period_no == pn,
+        )
+        .first()
+    )
+    require(pf is not None, "فرم دوره‌ای یافت نشد.", 404)
+
+    # Update rows
+    for i, br_id in enumerate(row_id):
+        rv = _safe_float(result_value[i] if i < len(result_value) else None)
+        at = (actions_text[i] if i < len(actions_text) else "") or ""
+        pr = (
+            db.query(ProgramPeriodRow)
+            .filter(ProgramPeriodRow.period_form_id == pf.id, ProgramPeriodRow.baseline_row_id == int(br_id))
+            .first()
+        )
+        if pr is None:
+            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=int(br_id))
+        pr.result_value = rv
+        pr.actions_text = at.strip()
+        db.add(pr)
+
+    # Create year mode lock on first successful save
+    if ym is None:
+        ym = ProgramPeriodYearMode(
+            org_id=user.org_id,
+            county_id=scope_county_id,
+            form_type_id=t.id,
+            year=int(year),
+            period_type=pt,
+        )
+        db.add(ym)
+
+    db.commit()
+    return RedirectResponse(
+        url=f"/submissions/program/entry?type_id={t.id}&year={int(year)}&period_type={pt}&period_no={pn}&saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/program/delete", response_class=RedirectResponse)
+def program_period_delete(
+    request: Request,
+    period_form_id: int = Form(...),
+    next_url: str = Form("/submissions/program"),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete a previously saved program monitoring period form (within user's scope)."""
+    require(can_submit_data(user))
+    _require_program_user(user)
+
+    scope_county_id = _scope_county_id(user)
+    pf = db.get(ProgramPeriodForm, int(period_form_id))
+    require(pf is not None, "فرم دوره‌ای یافت نشد.", 404)
+    require(pf.org_id == user.org_id and pf.county_id == scope_county_id, "دسترسی غیرمجاز", 403)
+
+    form_type_id = pf.form_type_id
+    year = pf.year
+
+    db.delete(pf)
+    db.flush()
+
+    # If this was the last period for that year+type in this scope, unlock year-mode
+    remaining = (
+        db.query(ProgramPeriodForm)
+        .filter(
+            ProgramPeriodForm.org_id == user.org_id,
+            ProgramPeriodForm.county_id == scope_county_id,
+            ProgramPeriodForm.form_type_id == form_type_id,
+            ProgramPeriodForm.year == year,
+        )
+        .count()
+    )
+    if remaining == 0:
+        ym = (
+            db.query(ProgramPeriodYearMode)
+            .filter(
+                ProgramPeriodYearMode.org_id == user.org_id,
+                ProgramPeriodYearMode.county_id == scope_county_id,
+                ProgramPeriodYearMode.form_type_id == form_type_id,
+                ProgramPeriodYearMode.year == year,
+            )
+            .first()
+        )
+        if ym is not None:
+            db.delete(ym)
+
+    db.commit()
+
+    # Prevent open redirect: only allow local paths
+    if not (next_url or "").startswith("/"):
+        next_url = "/submissions/program"
+    return RedirectResponse(url=next_url, status_code=303)
+
+
+# -----------------------------------------------------------------------------
+# Single submission view (MUST be defined after /program routes)
+# -----------------------------------------------------------------------------
 
 
 @router.get("/{submission_id}", response_class=HTMLResponse)

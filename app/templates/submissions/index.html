@@ -17,6 +17,14 @@
       </form>
     </div>
 
+    {% if user and user.role and user.role.value.startswith('org_') %}
+    <div class="card p-3 border-0 shadow-sm hover-lift mt-3">
+      <h5 class="mb-2">ثبت داده پایش برنامه</h5>
+      <div class="text-muted small mb-3">ثبت داده‌های دوره‌ای (سه‌ماهه/شش‌ماهه/سالانه) برای تیپ فرم‌های برنامه.</div>
+      <a class="btn btn-outline-primary w-100" href="/submissions/program"><i class="bi bi-table"></i> ورود</a>
+    </div>
+    {% endif %}
+
     <div class="card p-3 border-0 shadow-sm mt-3">
       <h6 class="mb-2">راهنما</h6>
       <ul class="small text-muted m-0">

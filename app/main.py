@@ -43,6 +43,7 @@ from app.modules.notifications.router import router as notifications_router
 from app.modules.policy.router import router as policy_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.reports.router import router as reports_router
+from app.modules.programs.router import router as programs_router
 
 
 logger = logging.getLogger("water_compat")
@@ -236,6 +237,7 @@ app.include_router(notifications_router)
 app.include_router(policy_router)
 app.include_router(submissions_router)
 app.include_router(reports_router)
+app.include_router(programs_router)
 
 
 @app.on_event("startup")

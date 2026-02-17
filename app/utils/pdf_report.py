@@ -7,12 +7,22 @@ from typing import Any, Iterable
 import re
 from xml.sax.saxutils import escape as xml_escape
 
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    PageTemplate,
+    NextPageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    PageBreak,
+)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from pathlib import Path
@@ -364,14 +374,20 @@ class _CKHtmlToFlowables(HTMLParser):
         self._flush_paragraph()
 
 
-def html_to_flowables(html: str, base_style: ParagraphStyle, font_name: str, font_bold: str) -> list[Any]:
+def html_to_flowables(
+    html: str,
+    base_style: ParagraphStyle,
+    font_name: str,
+    font_bold: str,
+    max_width_cm: float = 15.0,
+) -> list[Any]:
     """Convert HTML into a list of Flowables.
 
     Unlike html_to_paragraphs, this also preserves HTML tables.
     """
     if not html:
         return []
-    parser = _CKHtmlToFlowables(base_style, font_name, font_bold)
+    parser = _CKHtmlToFlowables(base_style, font_name, font_bold, max_width_cm=max_width_cm)
     try:
         parser.feed(html)
         parser.close()
@@ -434,7 +450,8 @@ def _register_font() -> tuple[str, str]:
 
 
 def _header_footer(canvas, doc, meta: dict[str, str]):
-    width, height = A4
+    # Support mixed page orientations (portrait/landscape)
+    width, height = getattr(doc, "pagesize", A4)
     canvas.saveState()
 
     # Header background line
@@ -556,15 +573,40 @@ def build_report_pdf(
         "font_bold": font_bold,
     }
 
-    doc_tpl = SimpleDocTemplate(
+    portrait_ps = A4
+    landscape_ps = landscape(A4)
+
+    # Keep margins consistent across orientations
+    left_m = 2 * cm
+    right_m = 2 * cm
+    top_m = 3 * cm
+    bottom_m = 2.2 * cm
+
+    doc_tpl = BaseDocTemplate(
         buff,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=3*cm,
-        bottomMargin=2.2*cm,
+        pagesize=portrait_ps,
+        rightMargin=right_m,
+        leftMargin=left_m,
+        topMargin=top_m,
+        bottomMargin=bottom_m,
         title=f"report_{getattr(report,'id','')}",
     )
+
+    def _frame_for(ps):
+        w, h = ps
+        return Frame(left_m, bottom_m, w - left_m - right_m, h - top_m - bottom_m, id="F", showBoundary=0)
+
+    on_page = lambda c, d: _header_footer(c, d, meta)
+    doc_tpl.addPageTemplates(
+        [
+            PageTemplate(id="portrait", frames=[_frame_for(portrait_ps)], onPage=on_page, pagesize=portrait_ps),
+            PageTemplate(id="landscape", frames=[_frame_for(landscape_ps)], onPage=on_page, pagesize=landscape_ps),
+        ]
+    )
+
+    portrait_usable_w = portrait_ps[0] - left_m - right_m
+    landscape_usable_w = landscape_ps[0] - left_m - right_m
+    landscape_usable_w_cm = float(landscape_usable_w / cm)
 
     story: list[Any] = []
     # Cover-ish title block
@@ -637,8 +679,23 @@ def build_report_pdf(
         story.append(Paragraph(rtl("پیوستی ثبت نشده است."), small))
 
     # 2) Sections
+    # Switch to landscape for the "forms" section (tables need more horizontal space)
+    story.append(NextPageTemplate("landscape"))
     story.append(PageBreak())
     story.append(Paragraph(rtl("۲) فرم‌های گزارش"), h2))
+
+    # Smaller font & better wrapping for tables in landscape pages
+    land_base = ParagraphStyle(
+        name="RTL_Landscape",
+        parent=base,
+        fontSize=9,
+        leading=13,
+        wordWrap="CJK",
+        splitLongWords=1,
+    )
+    land_small = ParagraphStyle(name="SmallLand", parent=land_base, fontSize=8, leading=11)
+    land_cell = ParagraphStyle(name="CellLand", parent=land_base, fontSize=8.2, leading=11)
+    land_cell_bold = ParagraphStyle(name="CellLandBold", parent=land_cell, fontName=font_bold)
 
     agg = doc.get("aggregation") or {}
     subs = agg.get("submissions") or []
@@ -658,7 +715,7 @@ def build_report_pdf(
             story.append(Paragraph(rtl(f"{i}. {title} (Submission #{sid})"), ParagraphStyle(name="SecTitle", parent=h2, alignment=TA_RIGHT)))
 
             desc_html = sec.get("description_html") if isinstance(sec, dict) else ""
-            desc_flow = html_to_flowables(desc_html or "", base, font_name, font_bold)
+            desc_flow = html_to_flowables(desc_html or "", land_base, font_name, font_bold, max_width_cm=landscape_usable_w_cm)
             if desc_flow:
                 story.extend(desc_flow)
 
@@ -669,7 +726,7 @@ def build_report_pdf(
 
             # Prefer layout-based rendering (same as فرم‌ساز)
             if isinstance(layout, list) and isinstance(fields_map, dict) and layout:
-                total_w = 15 * cm
+                total_w = landscape_usable_w
                 for r in layout:
                     if not isinstance(r, dict):
                         continue
@@ -696,10 +753,11 @@ def build_report_pdf(
                             else:
                                 val = str(v)
 
-                            cell_html = f"<b>{xml_escape(rtl(str(label)))}</b><br/>{xml_escape(rtl(val))}"
-                            row_cells.append(Paragraph(cell_html, base))
+                            safe_val = xml_escape(rtl(str(val))).replace("\n", "<br/>")
+                            cell_html = f"<b>{xml_escape(rtl(str(label)))}</b><br/>{safe_val}"
+                            row_cells.append(Paragraph(cell_html, land_cell))
                         else:
-                            row_cells.append(Paragraph("", base))
+                            row_cells.append(Paragraph("", land_cell))
 
                     if cols == 1:
                         widths = [total_w]
@@ -713,7 +771,7 @@ def build_report_pdf(
                         ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
                         ("BACKGROUND", (0,0), (-1,-1), colors.white),
                         ("FONTNAME", (0,0), (-1,-1), font_name),
-                        ("FONTSIZE", (0,0), (-1,-1), 9),
+                        ("FONTSIZE", (0,0), (-1,-1), 8.2),
                         ("VALIGN", (0,0), (-1,-1), "TOP"),
                         ("ALIGN", (0,0), (-1,-1), "RIGHT"),
                         ("RIGHTPADDING", (0,0), (-1,-1), 10),
@@ -725,7 +783,7 @@ def build_report_pdf(
                     story.append(Spacer(1, 6))
             else:
                 # Fallback: key/value table
-                rows = [[rtl("مقدار"), rtl("عنوان")]]
+                rows: list[list[Any]] = [[Paragraph(rtl("مقدار"), land_cell_bold), Paragraph(rtl("عنوان"), land_cell_bold)]]
                 for k, v in payload.items():
                     label = labels.get(k, k) if isinstance(labels, dict) else k
                     val = ""
@@ -735,15 +793,19 @@ def build_report_pdf(
                         val = ", ".join(map(str, v))
                     else:
                         val = str(v)
-                    rows.append([rtl(val), rtl(str(label))])
+                    safe_val = xml_escape(rtl(str(val))).replace("\n", "<br/>")
+                    rows.append([
+                        Paragraph(safe_val, land_cell),
+                        Paragraph(xml_escape(rtl(str(label))), land_cell),
+                    ])
 
-                table = Table(rows, colWidths=[9*cm, 6*cm])
+                table = Table(rows, colWidths=[landscape_usable_w * 0.65, landscape_usable_w * 0.35])
                 table.setStyle(TableStyle([
                     ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#d0d7de")),
                     ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f6f8fa")),
                     ("FONTNAME", (0,0), (-1,0), font_bold),
                     ("FONTNAME", (0,1), (-1,-1), font_name),
-                    ("FONTSIZE", (0,0), (-1,-1), 9),
+                    ("FONTSIZE", (0,0), (-1,-1), 8.2),
                     ("VALIGN", (0,0), (-1,-1), "TOP"),
                     ("ALIGN", (0,0), (-1,-1), "RIGHT"),
                     ("RIGHTPADDING", (0,0), (-1,-1), 10),
@@ -754,7 +816,33 @@ def build_report_pdf(
     else:
         story.append(Paragraph(rtl("هیچ فرمی به گزارش اضافه نشده است."), base))
 
+    # Program monitoring comparative sections (snapshot tables)
+    psecs = doc.get("program_sections") or []
+    if isinstance(psecs, list) and psecs:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(rtl("پایش برنامه (گزارش مقایسه‌ای)"), h2))
+        for j, ps in enumerate(psecs, start=1):
+            if not isinstance(ps, dict):
+                continue
+            ptitle = ps.get("title") or f"پایش برنامه {j}"
+            story.append(Paragraph(rtl(f"{j}. {ptitle}"), ParagraphStyle(name=f"ProgTitle{j}", parent=h2, alignment=TA_RIGHT)))
+
+            pdesc_html = ps.get("description_html") or ""
+            pdesc_flow = html_to_flowables(pdesc_html, land_base, font_name, font_bold, max_width_cm=landscape_usable_w_cm)
+            if pdesc_flow:
+                story.extend(pdesc_flow)
+
+            ptable_html = ps.get("table_html") or ""
+            ptable_flow = html_to_flowables(ptable_html, land_base, font_name, font_bold, max_width_cm=landscape_usable_w_cm)
+            if ptable_flow:
+                story.extend(ptable_flow)
+            else:
+                story.append(Paragraph(rtl("—"), land_small))
+            story.append(Spacer(1, 10))
+
     # 3) Conclusion
+    # Switch back to portrait for text-heavy conclusion/history pages
+    story.append(NextPageTemplate("portrait"))
     story.append(PageBreak())
     story.append(Paragraph(rtl("۳) نتیجه‌گیری و نتایج"), h2))
     concl_html = doc.get("conclusion_html") or ""
@@ -794,10 +882,6 @@ def build_report_pdf(
     ]))
     story.append(sig)
 
-    doc_tpl.build(
-        story,
-        onFirstPage=lambda c, d: _header_footer(c, d, meta),
-        onLaterPages=lambda c, d: _header_footer(c, d, meta),
-    )
+    doc_tpl.build(story)
 
     return buff.getvalue()

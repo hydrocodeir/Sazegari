@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block page_title %}ثبت داده پایش برنامه{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <div class="text-muted small">انتخاب تیپ فرم و بازه زمانی برای ورود داده</div>
+    <h4 class="mb-0">ثبت داده پایش برنامه</h4>
+  </div>
+  <a class="btn btn-outline-secondary" href="/submissions"><i class="bi bi-arrow-right"></i> بازگشت</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card p-3 border-0 shadow-sm hover-lift">
+      <h5 class="mb-2">شروع ثبت دوره‌ای</h5>
+      <div class="text-muted small mb-3">در یک سال برای یک تیپ فرم، فقط یکی از حالت‌های سه‌ماهه/شش‌ماهه/سالانه مجاز است.</div>
+
+      <form method="get" action="/submissions/program/entry">
+        <div class="mb-2">
+          <label class="form-label">تیپ فرم</label>
+          <select name="type_id" class="form-select" required>
+            <option value="">-- انتخاب --</option>
+            {% for t in types %}
+              <option value="{{ t.id }}">{{ t.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label">سال (شمسی)</label>
+            <input name="year" type="number" class="form-control" placeholder="مثلاً 1404" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label">نوع بازه</label>
+            <select name="period_type" class="form-select" required>
+              <option value="">-- انتخاب --</option>
+              <option value="quarter">سه‌ماهه</option>
+              <option value="half">شش‌ماهه</option>
+              <option value="year">سالانه</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mb-2 mt-2">
+          <label class="form-label">شماره بازه</label>
+          <select name="period_no" class="form-select" required>
+            <option value="">-- انتخاب --</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+          <div class="small text-muted mt-1">
+            <span>سه‌ماهه: 1..4 | شش‌ماهه: 1..2 | سالانه: فقط 1</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary w-100" type="submit">شروع</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card p-3 border-0 shadow-sm">
+      <h6 class="mb-2">نکته‌ها</h6>
+      <ul class="small text-muted m-0">
+        <li>اگر برنامه پایش آن تیپ فرم هنوز تکمیل نشده باشد، امکان ورود داده دوره‌ای وجود ندارد.</li>
+        <li>خانه‌های خالی در جدول گزارش خالی نمایش داده می‌شوند، ولی در محاسبات 0 در نظر گرفته می‌شوند.</li>
+        <li>گزارش پایش برنامه را می‌توانید در «گزارش‌ها» و از داخل گزارش (با افزودن بخش پایش برنامه) ایجاد کنید.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="card p-3 border-0 shadow-sm mt-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div>
+      <h6 class="mb-0">سوابق ثبت‌شده</h6>
+      <div class="small text-muted">در سطح دسترسی شما ({{ 'استان' if scope_county_id == 0 else 'شهرستان' }})</div>
+    </div>
+  </div>
+
+  {% if history and history|length > 0 %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>تیپ فرم</th>
+            <th style="width: 140px;">بازه</th>
+            <th style="width: 120px;">عملیات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in history %}
+            <tr>
+              <td>{{ h.type_title }}</td>
+              <td class="small text-muted">{{ h.period_label }}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-primary" href="/submissions/program/entry?type_id={{ h.type_id }}&year={{ h.year }}&period_type={{ h.period_type }}&period_no={{ h.period_no }}">
+                  ویرایش/مشاهده
+                </a>
+                <form method="post" action="/submissions/program/delete" class="d-inline" onsubmit="return confirm('این ثبت داده حذف شود؟');">
+                  <input type="hidden" name="period_form_id" value="{{ h.id }}">
+                  <input type="hidden" name="next_url" value="/submissions/program">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="text-muted small">هنوز سابقه‌ای برای این سطح ثبت نشده است.</div>
+  {% endif %}
+</div>
+
+<script>
+(() => {
+  const pt = document.querySelector('select[name="period_type"]');
+  const pn = document.querySelector('select[name="period_no"]');
+  if (!pt || !pn) return;
+  function sync() {
+    const v = (pt.value || '').toLowerCase();
+    const max = v === 'quarter' ? 4 : (v === 'half' ? 2 : (v === 'year' ? 1 : 4));
+    Array.from(pn.options).forEach(opt => {
+      if (!opt.value) return;
+      const n = parseInt(opt.value, 10);
+      opt.hidden = (n > max);
+    });
+    if (pn.value && parseInt(pn.value, 10) > max) pn.value = '';
+  }
+  pt.addEventListener('change', sync);
+  sync();
+})();
+</script>
+
+{% endblock %}

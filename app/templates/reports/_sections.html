@@ -123,3 +123,61 @@
   <div class="text-muted">هنوز هیچ فرم/بخشی به گزارش اضافه نشده است.</div>
 {% endif %}
 </div>
+
+
+{# Program monitoring comparative sections #}
+{% set psecs = doc.program_sections or [] %}
+{% if psecs and psecs|length > 0 %}
+  <div class="mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="h6 m-0">پایش برنامه (گزارش مقایسه‌ای)</div>
+      <div class="text-muted small">{{ psecs|length }} مورد</div>
+    </div>
+
+    <div id="programSectionsContainer">
+      {% for ps in psecs %}
+        <div class="card border-0 shadow-sm mb-3 hover-lift" data-prog="{{ ps.id }}">
+          <div class="p-3 d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="h6 m-0">{{ ps.title or 'پایش برنامه' }}</div>
+              <div class="text-muted small">خروجی ثبت‌شده در گزارش (Snapshot)</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleProgramBody('{{ ps.id }}')"><i class="bi bi-chevron-down me-1"></i>جزئیات</button>
+              {% if can_edit %}
+                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="regenerateProgramSection('{{ ps.id }}')"><i class="bi bi-arrow-repeat me-1"></i>بازتولید</button>
+                <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeProgramSection('{{ ps.id }}')"><i class="bi bi-x-circle me-1"></i>حذف</button>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="program-body d-none" id="progBody_{{ ps.id }}">
+            <div class="px-3 pb-3">
+              {% if can_edit %}
+                <div class="bg-body-tertiary rounded-4 p-3">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div class="small text-muted">توضیحات این خروجی (در PDF نمایش داده می‌شود)</div>
+                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveProgramSectionDesc('{{ ps.id }}')"><i class="bi bi-save me-1"></i>ذخیره</button>
+                  </div>
+                  <div class="mt-2">
+                    <textarea id="progEditor_{{ ps.id }}" class="rte-textarea">{{ (ps.description_html or '') | e }}</textarea>
+                  </div>
+                </div>
+                <hr class="my-3">
+              {% else %}
+                {% if ps.description_html %}
+                  <div class="bg-body-tertiary rounded-4 p-3 mb-3">
+                    <div class="small text-muted">توضیحات</div>
+                    <div class="mt-2">{{ ps.description_html | safe }}</div>
+                  </div>
+                {% endif %}
+              {% endif %}
+
+              <div class="mt-2">{{ (ps.table_html or '') | safe }}</div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}

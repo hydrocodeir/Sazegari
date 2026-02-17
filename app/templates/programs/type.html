@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <div class="text-muted small">سازمان: {{ org.name }}</div>
+      <h3 class="mb-0">تیپ فرم: {{ t.title }}</h3>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="/programs?org_id={{ org.id }}"><i class="bi bi-arrow-right"></i> بازگشت</a>
+      <a class="btn btn-outline-primary" href="/programs/{{ t.id }}/baseline"><i class="bi bi-flag"></i> برنامه پایش</a>
+    </div>
+  </div>
+
+  <div class="card p-3 border-0 shadow-sm mb-3">
+    <form method="post" action="/programs/{{ t.id }}/edit" class="row g-2 align-items-end">
+      <div class="col-12 col-lg-8">
+        <label class="form-label">عنوان</label>
+        <input class="form-control" name="title" value="{{ t.title }}" required />
+      </div>
+      <div class="col-12 col-lg-4 text-end">
+        <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> ذخیره</button>
+      </div>
+    </form>
+    <div class="text-muted small mt-2">
+      نکته: ثبت داده‌های دوره‌ای و تولید گزارش در بخش‌های «ثبت داده» و «گزارش‌ها» انجام می‌شود.
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between">
+      <div class="fw-semibold">آخرین فرم‌های دوره‌ای ثبت‌شده</div>
+      <span class="text-muted small">نمایش ۵۰ مورد آخر</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:140px">حوزه</th>
+            <th style="width:110px">سال</th>
+            <th style="width:140px">بازه</th>
+            <th style="width:140px">شماره</th>
+            <th class="text-muted">ایجاد کننده</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pf in period_forms %}
+          <tr>
+            <td>
+              {% if pf.county_id and pf.county_id != 0 %}
+                <span class="badge text-bg-secondary">شهرستان</span>
+                <span class="small text-muted">{{ county_by_id.get(pf.county_id, pf.county_id) }}</span>
+              {% else %}
+                <span class="badge text-bg-info">استان</span>
+              {% endif %}
+            </td>
+            <td>{{ pf.year }}</td>
+            <td>{{ pf.period_type }}</td>
+            <td>{{ pf.period_no }}</td>
+            <td class="text-muted small">{{ pf.created_by_id }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">هنوز داده‌ای ثبت نشده است.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

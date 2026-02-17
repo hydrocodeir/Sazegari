@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block page_title %}برنامه پایش - {{ t.title }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <div class="text-muted small">فرم اولیه برنامه پایش</div>
+    <h4 class="mb-0">{{ t.title }}</h4>
+  </div>
+  <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}"><i class="bi bi-arrow-right"></i> بازگشت</a>
+</div>
+
+<div class="card p-3 border-0 shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h6 class="m-0">ردیف‌ها/پروژه‌ها</h6>
+    <span class="badge text-bg-secondary">ID Baseline: {{ baseline.id }}</span>
+  </div>
+
+  {% if not rows %}
+    <div class="text-muted mb-3">هنوز ردیفی ثبت نشده است. از بخش «افزودن ردیف» استفاده کن.</div>
+  {% endif %}
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th style="width:70px;">ردیف</th>
+          <th>عنوان پروژه/ردیف</th>
+          <th style="width:110px;">واحد</th>
+          <th style="width:120px;">سال شروع</th>
+          <th style="width:140px;">سال خاتمه</th>
+          <th style="width:160px;">هدف تا خاتمه</th>
+          <th style="width:140px;">عملیات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/update">
+            <td><input class="form-control form-control-sm" name="row_no" type="number" value="{{ r.row_no }}" required></td>
+            <td><input class="form-control form-control-sm" name="title" value="{{ r.title }}" required></td>
+            <td><input class="form-control form-control-sm" name="unit" value="{{ r.unit }}"></td>
+            <td><input class="form-control form-control-sm" name="start_year" type="number" value="{{ r.start_year }}" required></td>
+            <td><input class="form-control form-control-sm" name="end_year" type="number" value="{{ r.end_year }}" required></td>
+            <td><input class="form-control form-control-sm" name="target_value" type="number" step="any" value="{{ r.target_value }}" required></td>
+            <td class="d-flex gap-1">
+              <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
+          </form>
+              <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/delete" onsubmit="return confirm('حذف شود؟');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+              </form>
+            </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <hr class="my-3">
+
+  <h6 class="mb-2">افزودن ردیف جدید</h6>
+  <form method="post" action="/programs/{{ t.id }}/baseline/add-row" class="row g-2">
+    <div class="col-12 col-md-1">
+      <input class="form-control" name="row_no" type="number" placeholder="ردیف" required>
+    </div>
+    <div class="col-12 col-md-5">
+      <input class="form-control" name="title" placeholder="عنوان پروژه/ردیف" required>
+    </div>
+    <div class="col-12 col-md-2">
+      <input class="form-control" name="unit" placeholder="واحد">
+    </div>
+    <div class="col-6 col-md-1">
+      <input class="form-control" name="start_year" type="number" placeholder="شروع" required>
+    </div>
+    <div class="col-6 col-md-1">
+      <input class="form-control" name="end_year" type="number" placeholder="خاتمه" required>
+    </div>
+    <div class="col-12 col-md-2">
+      <input class="form-control" name="target_value" type="number" step="any" placeholder="هدف" required>
+    </div>
+    <div class="col-12">
+      <textarea class="form-control" name="notes" rows="2" placeholder="یادداشت (اختیاری)"></textarea>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-success" type="submit"><i class="bi bi-plus-circle"></i> افزودن</button>
+    </div>
+  </form>
+
+</div>
+
+{% endblock %}

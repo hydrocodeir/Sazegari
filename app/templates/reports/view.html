@@ -29,7 +29,7 @@
             </div>
           {% else %}
             <div class="h5 m-0">{{ doc.meta.title or ("گزارش #" ~ report.id) }}</div>
-            {% if doc.meta.subtitle %}<div class="text-muted small mt-1">{{ doc.meta.subtitle }}</div>{% endif %}
+            {% if doc.meta.subtitle %}<div class="text-muted small mt-1">تیپ فرم پایش و حوزه خروجی را انتخاب کن تا جدول تجمیعی (براساس آخرین بازه ثبت‌شده) به گزارش اضافه شود.</div>{% endif %}
           {% endif %}
 
           <div class="text-muted small mt-2">
@@ -172,6 +172,46 @@
             <button type="submit" class="btn btn-primary btn-sm w-100">افزودن به گزارش</button>
           </div>
         </form>
+        {% endif %}
+
+        <hr class="my-3">
+        {% if program_types and program_types|length > 0 %}
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-semibold">پایش برنامه (گزارش مقایسه‌ای)</div>
+              <div class="text-muted small mt-1">تیپ فرم پایش و حوزه خروجی را انتخاب کن تا جدول تجمیعی (براساس آخرین بازه ثبت‌شده) به گزارش اضافه شود.</div>
+            </div>
+          </div>
+
+          <form hx-post="/reports/{{ report.id }}/program_sections/add" hx-target="#sectionsBox" hx-swap="innerHTML" class="row g-2 align-items-end mt-1">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">تیپ فرم پایش</label>
+              <select name="form_type_id" class="form-select form-select-sm" required>
+                <option value="">-- انتخاب --</option>
+                {% for t in program_types %}
+                  <option value="{{ t.id }}">{{ t.title }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text small">جدول بر اساس <span class="fw-semibold">آخرین بازه ثبت‌شده</span> برای همین تیپ‌فرم و حوزه خروجی تولید می‌شود.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small text-muted">حوزه خروجی</label>
+              {% if report.kind.value == 'county' %}
+                <input type="hidden" name="mode" value="county">
+                <div class="form-control form-control-sm bg-body-tertiary">شهرستان (همین گزارش)</div>
+              {% else %}
+                <select name="mode" class="form-select form-select-sm" required>
+                  <option value="province">استان (ثبت‌های استانی)</option>
+                  <option value="county_agg">تجمیع شهرستان‌ها</option>
+                </select>
+              {% endif %}
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-plus-circle me-1"></i>افزودن خروجی</button>
+            </div>
+          </form>
+        {% else %}
+          <div class="alert alert-info py-2 small mb-0">برای این سازمان هنوز «تیپ فرم پایش برنامه» همراه با برنامه پایش توسط دبیرخانه آماده نشده است.</div>
         {% endif %}
       {% endif %}
 
@@ -342,6 +382,7 @@
 let rteIntro = null;
 let rteConclusion = null;
 let rteSections = {};
+let rteProgramSections = {};
 let sortable = null;
 let sectionsCollapsed = false;
 
@@ -724,7 +765,7 @@ function destroySectionEditors(){
   try{
     if(window.__CK5_EDITORS__){
       Object.keys(window.__CK5_EDITORS__).forEach(k=>{
-        if(k.startsWith('secEditor_')){
+        if(k.startsWith('secEditor_') || k.startsWith('progEditor_')){
           destroyEditor(window.__CK5_EDITORS__[k]);
           delete window.__CK5_EDITORS__[k];
         }
@@ -732,6 +773,7 @@ function destroySectionEditors(){
     }
   }catch(e){}
   rteSections = {};
+  rteProgramSections = {};
 }
 
 function bindLazyRTE(){
@@ -784,6 +826,23 @@ function bindLazyRTE(){
       el.removeEventListener('click', handler);
       const ed = await activateRTE(el.id, {height: 220, small: true, minimal: true});
       rteSections[sid] = ed;
+      if(ed){
+        bindEditorChange(ed, ()=>{ setTimeout(()=>updateStepper(), 0); });
+      }
+      updateStepper();
+    };
+    el.addEventListener('focus', handler);
+    el.addEventListener('click', handler);
+  });
+
+  // Program monitoring section editors (lazy init)
+  document.querySelectorAll("textarea[id^='progEditor_']").forEach(el=>{
+    const pid = el.id.replace("progEditor_", "");
+    const handler = async ()=>{
+      el.removeEventListener('focus', handler);
+      el.removeEventListener('click', handler);
+      const ed = await activateRTE(el.id, {height: 220, small: true, minimal: true});
+      rteProgramSections[pid] = ed;
       if(ed){
         bindEditorChange(ed, ()=>{ setTimeout(()=>updateStepper(), 0); });
       }
@@ -971,6 +1030,70 @@ async function removeSection(submissionId){
   updateStepper();
 }
 
+function adjustProgramPeriodNo(form){
+  if(!form) return;
+  const ptEl = form.querySelector('[name="period_type"]');
+  const sel = form.querySelector('[name="period_no"]');
+  const pt = ((ptEl && ptEl.value) ? ptEl.value : 'quarter').toLowerCase();
+  if(!sel) return;
+  const current = sel.value;
+  const allowed = (pt === 'quarter') ? ['1','2','3','4'] : (pt === 'half') ? ['1','2'] : ['1'];
+  sel.innerHTML = allowed.map(v=>`<option value="${v}">${v.replace('1','۱').replace('2','۲').replace('3','۳').replace('4','۴')}</option>`).join('');
+  if(allowed.includes(current)) sel.value = current;
+}
+
+function validateProgramAddForm(form){
+  try{
+    adjustProgramPeriodNo(form);
+    return true;
+  }catch(e){
+    return true;
+  }
+}
+
+async function saveProgramSectionDesc(pid){
+  const ed = rteProgramSections[String(pid)];
+  const ta = document.getElementById('progEditor_' + pid);
+  const html = ed ? (ed.getData() || '') : (ta ? (ta.value || '') : '');
+  const fd = new FormData();
+  fd.append('section_id', pid);
+  fd.append('description_html', html);
+  const res = await fetch(`/reports/{{ report.id }}/program_sections/update`, {method:'POST', body: fd});
+  const htmlOut = await res.text();
+  destroySectionEditors();
+  document.getElementById('sectionsBox').innerHTML = htmlOut;
+  bindLazyRTE();
+  initSortable();
+  updateStepper();
+  showToast('توضیحات ذخیره شد','success');
+}
+
+async function removeProgramSection(pid){
+  if(!confirm('این خروجی پایش برنامه از گزارش حذف شود؟')) return;
+  const fd = new FormData();
+  fd.append('section_id', pid);
+  const res = await fetch(`/reports/{{ report.id }}/program_sections/remove`, {method:'POST', body: fd});
+  const htmlOut = await res.text();
+  destroySectionEditors();
+  document.getElementById('sectionsBox').innerHTML = htmlOut;
+  bindLazyRTE();
+  initSortable();
+  updateStepper();
+}
+
+async function regenerateProgramSection(pid){
+  const fd = new FormData();
+  fd.append('section_id', pid);
+  const res = await fetch(`/reports/{{ report.id }}/program_sections/regenerate`, {method:'POST', body: fd});
+  const htmlOut = await res.text();
+  destroySectionEditors();
+  document.getElementById('sectionsBox').innerHTML = htmlOut;
+  bindLazyRTE();
+  initSortable();
+  updateStepper();
+  showToast('بازتولید شد','success');
+}
+
 function pickUploadFile(){
   document.getElementById('reportFile')?.click();
 }
@@ -1081,7 +1204,7 @@ function updateStepper(){
 
   const introDone = rteIntro ? (getEditorText('intro') || '').trim().length > 0 : false;
   const conclusionDone = rteConclusion ? (getEditorText('conclusion') || '').trim().length > 0 : false;
-  const hasSections = document.querySelectorAll('#sectionsContainer [data-sid]').length > 0;
+  const hasSections = (document.querySelectorAll('#sectionsContainer [data-sid]').length > 0) || (document.querySelectorAll('#programSectionsContainer [data-prog]').length > 0);
 
   const doneMap = {meta: metaDone, intro: introDone, sections: hasSections, conclusion: conclusionDone};
   steps.forEach(s=>{
@@ -1097,9 +1220,19 @@ function toggleSectionBody(sid){
   body.classList.toggle('d-none');
 }
 
+function toggleProgramBody(pid){
+  const body = document.getElementById('progBody_'+pid);
+  if(!body) return;
+  body.classList.toggle('d-none');
+}
+
 function toggleAllSections(){
   sectionsCollapsed = !sectionsCollapsed;
   document.querySelectorAll('#sectionsContainer .section-body').forEach(body=>{
+    if(sectionsCollapsed) body.classList.add('d-none');
+    else body.classList.remove('d-none');
+  });
+  document.querySelectorAll('#programSectionsContainer .program-body').forEach(body=>{
     if(sectionsCollapsed) body.classList.add('d-none');
     else body.classList.remove('d-none');
   });
@@ -1171,6 +1304,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 document.body.addEventListener('htmx:afterSwap', (e)=>{
   if(e.target && e.target.id === 'sectionsBox'){
     {% if can_edit %}
+      destroySectionEditors();
       bindLazyRTE();
       initSortable();
       updateStepper();

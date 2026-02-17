@@ -56,6 +56,8 @@
         <a class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}" href="/reports">
           <i class="bi bi-file-earmark-text"></i><span>گزارش‌ها</span>
         </a>
+
+        {# ایجاد تیپ فرم و Baseline فقط توسط مدیر دبیرخانه انجام می‌شود (نه کارشناس استان/شهرستان). #}
         {% endif %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/notifications') %}active{% endif %}" href="/notifications">
@@ -69,6 +71,12 @@
       {% if user and user.role and user.role.value.startswith("secretariat") %}
       <div class="sidebar-section mt-2">
         <div class="sidebar-caption">مدیریت</div>
+
+        {% if user and user.role and user.role.value == 'secretariat_admin' %}
+        <a class="sidebar-link {% if request.url.path.startswith('/programs') %}active{% endif %}" href="/programs">
+          <i class="bi bi-table"></i><span>پایش برنامه</span>
+        </a>
+        {% endif %}
         {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/orgs') %}active{% endif %}" href="/orgs">
@@ -96,7 +104,7 @@
         {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/policy') %}active{% endif %}" href="/policy">
-          <i class="bi bi-shield-lock"></i><span>Policy Matrix</span>
+          <i class="bi bi-shield-lock"></i><span>ماتریس دسترسی‌ها</span>
         </a>
         {% endif %}
         {% if user and can_manage_masterdata(user) %}

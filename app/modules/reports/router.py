@@ -25,12 +25,15 @@ from app.db.models.notification import Notification
 from app.db.models.submission import Submission
 from app.db.models.form_template import FormTemplate
 from app.db.models.org_county import OrgCountyUnit
+from app.db.models.program_form_type import ProgramFormType
+from app.db.models.program_baseline import ProgramBaseline
 from app.db.models.user import User, Role
 from app.db.models.report_audit_log import ReportAuditLog
 from app.db.models.report import ReportKind
 from app.utils.badges import get_badge_count, invalidate_badge
 from app.utils.report_agg import aggregate_content
 from app.utils.report_doc import load_doc, dump_doc
+from app.utils.program_report import build_program_report, resolve_latest_period
 from app.utils.notify import notify
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -255,7 +258,7 @@ def create(
         current_owner_id=user.id,
         status=ReportStatus.DRAFT,
         kind=kind_enum,
-        content_json=dump_doc({"intro_html": "", "conclusion_html": "", "meta": {"title": "", "subtitle": ""}, "sections": [], "aggregation": {}}),
+        content_json=dump_doc({"intro_html": "", "conclusion_html": "", "meta": {"title": "", "subtitle": ""}, "sections": [], "program_sections": [], "aggregation": {}}),
         note="",
     )
     db.add(r)
@@ -394,6 +397,24 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
         forms_map_available = {f.id: f.title for f in db.query(FormTemplate).filter(FormTemplate.id.in_(fids2)).all()} if fids2 else {}
         available_forms = db.query(FormTemplate).filter(FormTemplate.id.in_(fids2)).order_by(FormTemplate.title).all() if fids2 else []
 
+    # Program monitoring types (created by secretariat admin) usable in reports.
+    program_types = []
+    if _can_edit(user, r) and r.org_id:
+        all_types = (
+            db.query(ProgramFormType)
+            .filter(ProgramFormType.org_id == int(r.org_id))
+            .order_by(ProgramFormType.title.asc(), ProgramFormType.id.asc())
+            .all()
+        )
+        if all_types:
+            baselines = (
+                db.query(ProgramBaseline)
+                .filter(ProgramBaseline.org_id == int(r.org_id), ProgramBaseline.form_type_id.in_([t.id for t in all_types]))
+                .all()
+            )
+            has_baseline = {int(b.form_type_id) for b in baselines}
+            program_types = [t for t in all_types if int(t.id) in has_baseline]
+
 
 
     return request.app.state.templates.TemplateResponse(
@@ -414,6 +435,7 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
             "available_subs": available_subs,
             "forms_map_available": forms_map_available,
             "available_forms": available_forms,
+            "program_types": program_types,
             "user": user,
             "badge_count": get_badge_count(db, user),
             "actor_map": actor_map,
@@ -956,7 +978,7 @@ def add_section(
     doc = load_doc(r.content_json)
 
 
-    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
 
 @router.post("/{report_id}/sections/update", response_class=HTMLResponse)
 def update_section_desc(
@@ -983,7 +1005,7 @@ def update_section_desc(
     doc = load_doc(r.content_json)
 
 
-    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
 
 
 @router.post("/{report_id}/sections/remove", response_class=HTMLResponse)
@@ -1020,7 +1042,7 @@ def remove_section(
     doc = load_doc(r.content_json)
 
 
-    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
 
 @router.post("/{report_id}/sections/reorder", response_class=HTMLResponse)
 def reorder_sections(
@@ -1066,7 +1088,221 @@ def reorder_sections(
     doc = load_doc(r.content_json)
 
 
-    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user})
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
+
+
+# ---------------------------------------------------------------------
+# Program monitoring sections (comparative program report)
+# ---------------------------------------------------------------------
+
+@router.post("/{report_id}/program_sections/add", response_class=HTMLResponse)
+def add_program_section(
+    request: Request,
+    report_id: int,
+    form_type_id: int = Form(...),
+    mode: str = Form("province"),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان افزودن خروجی پایش برنامه وجود ندارد.")
+
+    # County report => always county scope based on report county
+    county_id = 0
+    effective_mode = (mode or "").strip().lower() or "province"
+    if r.kind == ReportKind.COUNTY:
+        effective_mode = "county"
+        county_id = int(r.county_id)
+    else:
+        # Provincial report: allow province OR aggregated counties
+        require(effective_mode in ("province", "county_agg"), "حالت خروجی پایش برنامه معتبر نیست.", 400)
+
+    # Auto-pick the latest available period for the selected scope.
+    sel = resolve_latest_period(
+        db=db,
+        org_id=int(r.org_id),
+        form_type_id=int(form_type_id),
+        mode=effective_mode,
+        county_id=int(county_id),
+    )
+
+    data = build_program_report(
+        db=db,
+        org_id=int(r.org_id),
+        form_type_id=int(form_type_id),
+        year=int(sel["year"]),
+        period_type=str(sel["period_type"]),
+        period_no=int(sel["period_no"]),
+        mode=effective_mode,
+        county_id=int(county_id),
+    )
+
+    # Render a snapshot HTML table and store it in report JSON.
+    table_html = request.app.state.templates.get_template("reports/_program_table.html").render({"data": data})
+    scope_label = data.get("scope_label") or ""
+    title = f"{data.get('form_type', {}).get('title', 'پایش برنامه')} — {scope_label} — {data.get('current_label', '')}".strip(" —")
+
+    before_doc = load_doc(r.content_json)
+    doc = load_doc(r.content_json)
+    sec_id = uuid.uuid4().hex
+    doc.setdefault("program_sections", [])
+    doc["program_sections"].append(
+        {
+            "id": sec_id,
+            "title": title,
+            "description_html": "",
+            "table_html": table_html,
+            "params": {
+                "form_type_id": int(form_type_id),
+                "mode": effective_mode,
+                "county_id": int(county_id),
+                "auto": True,
+                "year": int(sel["year"]),
+                "period_type": str(sel["period_type"]),
+                "period_no": int(sel["period_no"]),
+            },
+        }
+    )
+    r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="add_program_section", field="program_sections", before=before_doc.get("program_sections"), after=doc.get("program_sections"), comment=title)
+    db.commit()
+
+    doc = load_doc(r.content_json)
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
+
+
+@router.post("/{report_id}/program_sections/update", response_class=HTMLResponse)
+def update_program_section_desc(
+    request: Request,
+    report_id: int,
+    section_id: str = Form(...),
+    description_html: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان ویرایش توضیحات وجود ندارد.")
+
+    before_doc = load_doc(r.content_json)
+    doc = load_doc(r.content_json)
+    changed = False
+    for s in doc.get("program_sections", []) or []:
+        if isinstance(s, dict) and str(s.get("id")) == str(section_id):
+            s["description_html"] = description_html or ""
+            changed = True
+            break
+    require(changed, "بخش پایش برنامه یافت نشد.", 404)
+
+    r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="update_program_section", field="program_sections", before=before_doc.get("program_sections"), after=doc.get("program_sections"), comment=f"id={section_id}")
+    db.commit()
+    doc = load_doc(r.content_json)
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
+
+
+@router.post("/{report_id}/program_sections/remove", response_class=HTMLResponse)
+def remove_program_section(
+    request: Request,
+    report_id: int,
+    section_id: str = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان حذف بخش وجود ندارد.")
+
+    before_doc = load_doc(r.content_json)
+    doc = load_doc(r.content_json)
+    secs = doc.get("program_sections") if isinstance(doc.get("program_sections"), list) else []
+    new_secs = [s for s in secs if not (isinstance(s, dict) and str(s.get("id")) == str(section_id))]
+    require(len(new_secs) != len(secs), "بخش پایش برنامه یافت نشد.", 404)
+    doc["program_sections"] = new_secs
+
+    r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="remove_program_section", field="program_sections", before=before_doc.get("program_sections"), after=doc.get("program_sections"), comment=f"id={section_id}")
+    db.commit()
+    doc = load_doc(r.content_json)
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
+
+
+@router.post("/{report_id}/program_sections/regenerate", response_class=HTMLResponse)
+def regenerate_program_section(
+    request: Request,
+    report_id: int,
+    section_id: str = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Rebuild table_html snapshot from current DB state (useful if submissions changed)."""
+    r = db.get(Report, report_id)
+    require(r is not None, "گزارش یافت نشد", 404)
+    require(can_view_report(user, r.org_id, r.county_id, r.current_owner_id))
+    require(_can_edit(user, r), "در این وضعیت امکان بازتولید وجود ندارد.")
+
+    before_doc = load_doc(r.content_json)
+    doc = load_doc(r.content_json)
+    found = None
+    for s in doc.get("program_sections", []) or []:
+        if isinstance(s, dict) and str(s.get("id")) == str(section_id):
+            found = s
+            break
+    require(found is not None, "بخش پایش برنامه یافت نشد.", 404)
+    params = found.get("params") if isinstance(found, dict) else None
+    require(isinstance(params, dict), "پارامترهای بخش پایش برنامه ناقص است.", 400)
+
+    form_type_id = int(params.get("form_type_id"))
+    mode = str(params.get("mode") or "province")
+    county_id = int(params.get("county_id") or 0)
+
+    # If this section was created with auto mode, pick the latest period again.
+    if bool(params.get("auto")):
+        sel = resolve_latest_period(
+            db=db,
+            org_id=int(r.org_id),
+            form_type_id=form_type_id,
+            mode=mode,
+            county_id=county_id,
+        )
+        year = int(sel["year"])
+        period_type = str(sel["period_type"])
+        period_no = int(sel["period_no"])
+        params.update({"year": year, "period_type": period_type, "period_no": period_no})
+    else:
+        year = int(params.get("year"))
+        period_type = str(params.get("period_type"))
+        period_no = int(params.get("period_no"))
+
+    data = build_program_report(
+        db=db,
+        org_id=int(r.org_id),
+        form_type_id=form_type_id,
+        year=year,
+        period_type=period_type,
+        period_no=period_no,
+        mode=mode,
+        county_id=county_id,
+    )
+
+    table_html = request.app.state.templates.get_template("reports/_program_table.html").render({"data": data})
+    scope_label = data.get("scope_label") or ""
+    title = f"{data.get('form_type', {}).get('title', 'پایش برنامه')} — {scope_label} — {data.get('current_label', '')}".strip(" —")
+
+    found["table_html"] = table_html
+    found["title"] = title
+    found["params"] = params
+
+    r.content_json = dump_doc(doc)
+    _audit(db, r.id, user.id, action="regenerate_program_section", field="program_sections", before=before_doc.get("program_sections"), after=doc.get("program_sections"), comment=f"id={section_id}")
+    db.commit()
+
+    doc = load_doc(r.content_json)
+    return request.app.state.templates.TemplateResponse("reports/_sections.html", {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r)})
 
 @router.post("/{report_id}/upload")
 async def upload_file(
