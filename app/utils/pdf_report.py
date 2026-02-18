@@ -184,137 +184,225 @@ def html_to_paragraphs(html: str) -> list[str]:
         return lines
 
 
+@dataclass
+class _HtmlCell:
+    para: Paragraph
+    colspan: int = 1
+    rowspan: int = 1
+    is_header: bool = False
+
+
 class _CKHtmlToFlowables(HTMLParser):
-    """HTML -> list of ReportLab Flowables with basic table support.
+    """HTML -> list of ReportLab Flowables with basic table support (incl. colspan/rowspan).
 
-    This parser is intentionally small and designed for CKEditor/Quill outputs.
-    It supports paragraphs, inline formatting, lists, links, line breaks, and tables.
-
-    CKEditor 5 typically wraps tables with <figure class="table"> ... <table> ...</table>.
-    We ignore the wrapper and convert the actual <table> into a ReportLab Table.
+    Notes:
+    - Designed for CKEditor-like HTML (simple tags, no complex CSS).
+    - Preserves tables (incl. merged headers) and makes them RTL-friendly.
     """
 
     def __init__(self, base_style: ParagraphStyle, font_name: str, font_bold: str, max_width_cm: float = 15.0):
-        super().__init__()
+        super().__init__(convert_charrefs=True)
         self.base_style = base_style
-        self.cell_style = ParagraphStyle(name="Cell", parent=base_style)
-        self.cell_style_bold = ParagraphStyle(name="CellBold", parent=base_style, fontName=font_bold)
         self.font_name = font_name
         self.font_bold = font_bold
         self.max_width = max_width_cm * cm
 
         self.flowables: list[Any] = []
+
+        # paragraph buffer
         self._buf: list[str] = []
         self._stack: list[str] = []
-        self._pending_prefix: str = ""  # e.g., bullet
+        self._pending_prefix: str = ""
 
-        # Table state
+        # table state
         self._in_table = False
-        self._table_rows: list[list[Paragraph]] = []
-        self._current_row: list[Paragraph] | None = None
         self._in_cell = False
+        self._table_rows: list[list[_HtmlCell]] = []
+        self._current_row: list[_HtmlCell] | None = None
         self._cell_buf: list[str] = []
         self._cell_stack: list[str] = []
-        self._cell_is_header = False
+        self._cell_is_header: bool = False
+        self._cell_colspan: int = 1
+        self._cell_rowspan: int = 1
 
     def _flush_paragraph(self):
-        txt = "".join(self._buf).strip()
-        if txt:
-            if self._pending_prefix:
-                txt = xml_escape(rtl(self._pending_prefix)) + txt
-                self._pending_prefix = ""
-            self.flowables.append(Paragraph(txt, self.base_style))
-            self.flowables.append(Spacer(1, 4))
+        if not self._buf:
+            self._pending_prefix = ""
+            return
+        content = "".join(self._buf).strip()
         self._buf = []
+        # close any dangling tags
+        while self._stack:
+            content += self._stack.pop()
+        if not content:
+            self._pending_prefix = ""
+            return
+        if self._pending_prefix:
+            content = xml_escape(rtl(self._pending_prefix)) + content
+            self._pending_prefix = ""
+        try:
+            self.flowables.append(Paragraph(content, self.base_style))
+            self.flowables.append(Spacer(1, 4))
+        except Exception:
+            # as a last resort, strip tags
+            plain = re.sub(r"<[^>]+>", "", content)
+            self.flowables.append(Paragraph(xml_escape(rtl(plain)), self.base_style))
+            self.flowables.append(Spacer(1, 4))
 
-    def _flush_cell(self):
-        # Convert current cell buffer into a Paragraph
-        txt = "".join(self._cell_buf).strip() or ""
-        style = self.cell_style_bold if self._cell_is_header else self.cell_style
-        para = Paragraph(txt, style) if txt else Paragraph("", style)
+    def _flush_cell(self) -> _HtmlCell:
+        content = "".join(self._cell_buf).strip()
         self._cell_buf = []
-        self._cell_stack = []
-        self._cell_is_header = False
-        return para
+        while self._cell_stack:
+            content += self._cell_stack.pop()
+        if not content:
+            content = ""
+        # ensure base font; <b> will switch to bold via Paragraph's tags
+        try:
+            para = Paragraph(content, self.base_style)
+        except Exception:
+            plain = re.sub(r"<[^>]+>", "", content)
+            para = Paragraph(xml_escape(rtl(plain)), self.base_style)
 
-    
-def _finalize_table(self):
-    if not self._table_rows:
-        return
-    cols = max((len(r) for r in self._table_rows), default=0)
-    if cols <= 0:
-        return
-
-    # Pad rows to same column count
-    padded: list[list[Any]] = []
-    for r in self._table_rows:
-        row = list(r)
-        while len(row) < cols:
-            row.append(Paragraph("", self.cell_style))
-        padded.append(row)
-
-    # Detect a header row (usually <th> in first row)
-    has_header = False
-    if padded:
-        for c in padded[0]:
+        # Header styling hint: force bold font name (helps detect header rows)
+        if self._cell_is_header:
             try:
-                if isinstance(c, Paragraph) and getattr(getattr(c, "style", None), "fontName", "") == self.font_bold:
-                    has_header = True
+                para.style = ParagraphStyle(name="th", parent=self.base_style)
+                para.style.fontName = self.font_bold
+            except Exception:
+                pass
+
+        cs = max(1, int(self._cell_colspan or 1))
+        rs = max(1, int(self._cell_rowspan or 1))
+        return _HtmlCell(para=para, colspan=cs, rowspan=rs, is_header=self._cell_is_header)
+
+    def _finalize_table(self):
+        rows = self._table_rows or []
+        if not rows:
+            return
+
+        # Determine column count from colspans
+        col_count = 0
+        for r in rows:
+            col_count = max(col_count, sum(max(1, int(c.colspan or 1)) for c in r))
+        if col_count <= 0:
+            return
+
+        # Build grid with spans
+        # NOTE: We must distinguish between "empty slot" and "span placeholder".
+        # Using "" for both breaks rowspan/colspan placement (cells get inserted into
+        # spanned areas). We therefore use None for empty slots and a private sentinel
+        # object for occupied span placeholders, and convert to "" right before
+        # creating the ReportLab Table.
+        grid: list[list[Any]] = []
+        spans: list[tuple[int, int, int, int]] = []
+        _SPAN = object()
+
+        def ensure_row(i: int):
+            while len(grid) <= i:
+                grid.append([None for _ in range(col_count)])
+
+        for r_idx, r in enumerate(rows):
+            ensure_row(r_idx)
+            c_idx = 0
+            for cell in r:
+                # find next free slot (rowspans may occupy cells)
+                while c_idx < col_count and grid[r_idx][c_idx] is not None:
+                    c_idx += 1
+                if c_idx >= col_count:
                     break
-            except Exception:
-                continue
 
-    # RTL-friendly tables: show the first logical column on the right
-    padded = [list(reversed(r)) for r in padded]
+                cs = max(1, int(cell.colspan or 1))
+                rs = max(1, int(cell.rowspan or 1))
 
-    # Smarter column widths: proportional to content (with a reasonable minimum)
-    lens = [1] * cols
-    for r in padded:
-        for idx, cell in enumerate(r):
-            try:
-                txt = cell.getPlainText() if hasattr(cell, "getPlainText") else str(cell)
-            except Exception:
-                txt = ""
-            txt = (txt or "").strip()
-            if txt:
-                lens[idx] = max(lens[idx], len(txt))
+                ensure_row(r_idx + rs - 1)
 
-    total = sum(lens) or cols
-    min_w = 2.0 * cm
-    widths = [max(min_w, self.max_width * (l / total)) for l in lens]
-    s = sum(widths)
-    if s > 0:
-        scale = self.max_width / s
-        widths = [w * scale for w in widths]
+                # place top-left
+                grid[r_idx][c_idx] = cell.para
+                # fill the spanned area with empty placeholders
+                for rr in range(r_idx, r_idx + rs):
+                    ensure_row(rr)
+                    for cc in range(c_idx, min(col_count, c_idx + cs)):
+                        if rr == r_idx and cc == c_idx:
+                            continue
+                        grid[rr][cc] = _SPAN
 
-    t = Table(padded, colWidths=widths, hAlign="RIGHT", repeatRows=1 if has_header else 0)
-    t.splitByRow = 1
+                if cs > 1 or rs > 1:
+                    spans.append((c_idx, r_idx, min(col_count - 1, c_idx + cs - 1), r_idx + rs - 1))
 
-    tstyle = [
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]
+                c_idx += cs
 
-    start_row = 0
-    if has_header:
-        tstyle += [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6f8fa")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#24292f")),
+        # Convert placeholders to empty strings for ReportLab consumption
+        for rr in range(len(grid)):
+            for cc in range(col_count):
+                if grid[rr][cc] is None or grid[rr][cc] is _SPAN:
+                    grid[rr][cc] = ""
+
+        # Detect header rows (leading rows that contain <th>)
+        header_rows = 0
+        for r in rows:
+            if any(c.is_header for c in r):
+                header_rows += 1
+            else:
+                break
+        header_rows = min(header_rows, len(grid))
+
+        # RTL-friendly: reverse columns and adjust spans
+        grid = [list(reversed(r)) for r in grid]
+        adj_spans: list[tuple[int, int, int, int]] = []
+        for c1, r1, c2, r2 in spans:
+            nc1 = (col_count - 1) - c2
+            nc2 = (col_count - 1) - c1
+            adj_spans.append((nc1, r1, nc2, r2))
+
+        # Column widths proportional to content length (reasonable min)
+        lens = [1] * col_count
+        for r in grid:
+            for idx, cell in enumerate(r):
+                try:
+                    txt = cell.getPlainText() if hasattr(cell, "getPlainText") else str(cell)
+                except Exception:
+                    txt = ""
+                txt = (txt or "").strip()
+                if txt:
+                    lens[idx] = max(lens[idx], len(txt))
+
+        total = sum(lens) or col_count
+        min_w = 2.0 * cm
+        widths = [max(min_w, self.max_width * (l / total)) for l in lens]
+        s = sum(widths)
+        if s > 0:
+            scale = self.max_width / s
+            widths = [w * scale for w in widths]
+
+        tbl = Table(grid, colWidths=widths, hAlign="RIGHT", repeatRows=header_rows)
+        tbl.splitByRow = 1
+
+        tstyle: list[tuple] = [
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]
-        start_row = 1
 
-    # Zebra rows for readability
-    tstyle.append(("ROWBACKGROUNDS", (0, start_row), (-1, -1), [colors.white, colors.HexColor("#fbfbfc")]))
+        # Apply spans
+        for c1, r1, c2, r2 in adj_spans:
+            tstyle.append(("SPAN", (c1, r1), (c2, r2)))
 
-    t.setStyle(TableStyle(tstyle))
-    self.flowables.append(t)
-    self.flowables.append(Spacer(1, 6))
-    self._table_rows = []
+        if header_rows > 0:
+            tstyle.append(("BACKGROUND", (0, 0), (-1, header_rows - 1), colors.HexColor("#f6f8fa")))
+            tstyle.append(("TEXTCOLOR", (0, 0), (-1, header_rows - 1), colors.HexColor("#24292f")))
+
+        # Zebra rows after headers
+        start_row = header_rows
+        tstyle.append(("ROWBACKGROUNDS", (0, start_row), (-1, -1), [colors.white, colors.HexColor("#fbfbfc")]))
+
+        tbl.setStyle(TableStyle(tstyle))
+        self.flowables.append(tbl)
+        self.flowables.append(Spacer(1, 6))
+        self._table_rows = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         tag = (tag or "").lower()
@@ -336,16 +424,28 @@ def _finalize_table(self):
                 self._in_table = True
                 self._table_rows = []
             return
+
         if self._in_table:
             if tag == "tr":
                 self._current_row = []
                 return
+
             if tag in ("td", "th"):
                 self._in_cell = True
                 self._cell_buf = []
                 self._cell_stack = []
                 self._cell_is_header = (tag == "th")
+                # colspan/rowspan
+                try:
+                    self._cell_colspan = int(attr_map.get("colspan") or 1)
+                except Exception:
+                    self._cell_colspan = 1
+                try:
+                    self._cell_rowspan = int(attr_map.get("rowspan") or 1)
+                except Exception:
+                    self._cell_rowspan = 1
                 return
+
             # Allow basic inline formatting inside cells
             if self._in_cell:
                 if tag in ("b", "strong"):
@@ -365,7 +465,6 @@ def _finalize_table(self):
                     self._cell_buf.append(f'<a href="{xml_escape(href)}">')
                     self._cell_stack.append("</a>")
                     return
-                # Nested <p> inside cell -> line break
                 if tag in ("p", "div"):
                     self._cell_buf.append("<br/>")
                     return
@@ -402,22 +501,23 @@ def _finalize_table(self):
 
         if self._in_table:
             if tag in ("td", "th") and self._in_cell:
-                para = self._flush_cell()
+                cell = self._flush_cell()
                 if self._current_row is not None:
-                    self._current_row.append(para)
+                    self._current_row.append(cell)
                 self._in_cell = False
                 return
+
             if tag == "tr":
                 if self._current_row is not None:
                     self._table_rows.append(self._current_row)
                 self._current_row = None
                 return
+
             if tag == "table":
                 self._finalize_table()
                 self._in_table = False
                 return
 
-            # Close inline tags in cell
             if self._in_cell and tag in ("b", "strong", "i", "em", "u", "a"):
                 if self._cell_stack:
                     self._cell_buf.append(self._cell_stack.pop())
@@ -436,8 +536,7 @@ def _finalize_table(self):
     def handle_data(self, data: str):
         if data is None:
             return
-        # skip purely whitespace-only chunks
-        t = data
+        t = str(data)
         if not t:
             return
         if self._in_cell:
@@ -451,7 +550,6 @@ def _finalize_table(self):
             self._finalize_table()
             self._in_table = False
         self._flush_paragraph()
-
 
 def html_to_flowables(
     html: str,

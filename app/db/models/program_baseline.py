@@ -35,15 +35,19 @@ class ProgramBaselineRow(Base):
     # شماره/شناسه ردیف در خروجی گزارش (برای نمایش)
     row_no: Mapped[int] = mapped_column(Integer, index=True)
 
-    title: Mapped[str] = mapped_column(String(400))
+    title: Mapped[str] = mapped_column(String(400), default="")
     unit: Mapped[str] = mapped_column(String(80), default="")
 
-    start_year: Mapped[int] = mapped_column(Integer, index=True)
-    end_year: Mapped[int] = mapped_column(Integer, index=True)
+    start_year: Mapped[int] = mapped_column(Integer, index=True, default=0)
+    end_year: Mapped[int] = mapped_column(Integer, index=True, default=0)
 
     # هدف تا سال پیش‌بینی خاتمه
-    target_value: Mapped[float] = mapped_column(Float)
+    target_value: Mapped[float] = mapped_column(Float, default=0.0)
 
     notes: Mapped[str] = mapped_column(Text, default="")
+
+    # Dynamic data (non-target) and targets (multiple goal columns) stored as JSON text.
+    data_json: Mapped[str] = mapped_column(Text, default="{}")
+    targets_json: Mapped[str] = mapped_column(Text, default="{}")
 
     baseline = relationship("ProgramBaseline", back_populates="rows")

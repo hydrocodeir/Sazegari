@@ -61,6 +61,13 @@ class ProgramPeriodRow(Base):
 
     # نتیجه/عملکرد همان بازه (می‌تواند خالی باشد)
     result_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # نتایج چندگانه (برای هر ستون هدف/تارگت) به صورت JSON map
+    # مثال: {"target_1": 12.5, "target_2": 4}
+    # این فیلد همیشه مقدار دارد (حداقل "{}") تا در کوئری‌ها و قالب‌ها ساده‌تر باشد.
+    # IMPORTANT (MySQL): ستون‌های TEXT/BLOB/JSON نمی‌توانند server_default داشته باشند.
+    # default="{}" فقط در سمت اپلیکیشن اعمال می‌شود و باعث می‌شود هنگام INSERT مقدار خالی ذخیره شود.
+    results_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     # اقدامات/شرح اقدامات همان بازه
     actions_text: Mapped[str] = mapped_column(Text, default="")
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from app.db.session import get_db
 from app.auth.deps import get_current_user
@@ -16,6 +18,15 @@ from app.db.models.program_baseline import ProgramBaseline, ProgramBaselineRow
 from app.db.models.org import Org
 from app.db.models.county import County
 from app.db.models.program_period import ProgramPeriodForm, ProgramPeriodRow
+from app.utils.program_schema import (
+    load_schema,
+    dump_schema,
+    normalize_columns,
+    split_columns,
+    parse_json_map,
+    coerce_value,
+    safe_defaults_for_core,
+)
 
 
 router = APIRouter(prefix="/programs", tags=["programs"])
@@ -246,6 +257,17 @@ def baseline_page(type_id: int, request: Request, db: Session = Depends(get_db),
         .all()
     )
 
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    cols = normalize_columns(schema)
+    meta_cols, target_cols = split_columns(schema)
+
+    # prepare row value maps for easier template rendering
+    prepared = []
+    for r in rows:
+        data_map = parse_json_map(getattr(r, "data_json", "{}"))
+        targets_map = parse_json_map(getattr(r, "targets_json", "{}"))
+        prepared.append({"row": r, "data": data_map, "targets": targets_map})
+
     return request.app.state.templates.TemplateResponse(
         "programs/baseline.html",
         {
@@ -254,22 +276,68 @@ def baseline_page(type_id: int, request: Request, db: Session = Depends(get_db),
             "badge_count": get_badge_count(db, user),
             "t": t,
             "baseline": baseline,
-            "rows": rows,
+            "rows": prepared,
+            "schema": schema,
+            "columns": cols,
+            "meta_cols": meta_cols,
+            "target_cols": target_cols,
         },
     )
 
 
-@router.post("/{type_id}/baseline/add-row", response_class=RedirectResponse)
-def baseline_add_row(
+@router.get("/{type_id}/baseline/schema", response_class=HTMLResponse)
+def baseline_schema_page(type_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_secretariat_admin(user)
+    t = db.get(ProgramFormType, type_id)
+    require(t is not None, "تیپ فرم یافت نشد.", 404)
+
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    cols = normalize_columns(schema)
+    schema_text = dump_schema(schema)
+
+    return request.app.state.templates.TemplateResponse(
+        "programs/baseline_schema.html",
+        {
+            "request": request,
+            "user": user,
+            "badge_count": get_badge_count(db, user),
+            "t": t,
+            "schema_text": schema_text,
+            "columns": cols,
+        },
+    )
+
+
+@router.post("/{type_id}/baseline/schema", response_class=RedirectResponse)
+async def baseline_schema_save(
     type_id: int,
     request: Request,
-    row_no: int = Form(...),
-    title: str = Form(...),
-    unit: str = Form(""),
-    start_year: int = Form(...),
-    end_year: int = Form(...),
-    target_value: str = Form(...),
-    notes: str = Form(""),
+    schema_json: str = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    _require_secretariat_admin(user)
+    t = db.get(ProgramFormType, type_id)
+    require(t is not None, "تیپ فرم یافت نشد.", 404)
+
+    try:
+        parsed = json.loads(schema_json)
+        require(isinstance(parsed, dict), "اسکیما باید JSON معتبر از نوع object باشد.", 400)
+        # normalize to ensure columns exist
+        parsed["columns"] = normalize_columns(parsed)
+        t.baseline_schema_json = dump_schema(parsed)
+    except Exception:
+        require(False, "فرمت JSON نامعتبر است.", 400)
+
+    db.add(t)
+    db.commit()
+    return RedirectResponse(url=f"/programs/{t.id}/baseline", status_code=303)
+
+
+@router.post("/{type_id}/baseline/add-row", response_class=RedirectResponse)
+async def baseline_add_row(
+    type_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -284,18 +352,61 @@ def baseline_add_row(
     )
     require(baseline is not None, "فرم اولیه ایجاد نشده است.", 400)
 
-    tv = _safe_float(target_value)
-    require(tv is not None, "هدف باید عدد باشد.", 400)
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    cols = normalize_columns(schema)
+    defaults = safe_defaults_for_core()
+
+    form = await request.form()
+    # core values
+    core_vals = {k: defaults[k] for k in defaults}
+    data_map: dict[str, object] = {}
+    targets_map: dict[str, object] = {}
+
+    # extract values for any columns enabled in baseline
+    for c in cols:
+        if not c.get("in_baseline"):
+            continue
+        key = c["key"]
+        raw = form.get(key)
+        val = coerce_value(raw, c.get("type"))
+        if c.get("required"):
+            require(val is not None and str(val) != "", f"فیلد «{c.get('label') or key}» الزامی است.", 400)
+        if c.get("is_target"):
+            targets_map[key] = val
+        elif key in defaults:
+            core_vals[key] = val if val is not None else defaults[key]
+        else:
+            data_map[key] = val
+
+    # Auto-generate row_no if the admin removed it from schema or left it empty.
+    has_row_no_in_schema = any((c.get("key") == "row_no" and c.get("in_baseline")) for c in cols)
+    if (not has_row_no_in_schema) or not int(core_vals.get("row_no") or 0):
+        max_no = (
+            db.query(func.max(ProgramBaselineRow.row_no))
+            .filter(ProgramBaselineRow.baseline_id == baseline.id)
+            .scalar()
+        )
+        core_vals["row_no"] = int(max_no or 0) + 1
+
+    # mirror selected target into target_value
+    tv = 0.0
+    for c in cols:
+        if c.get("is_target") and c.get("use_for_progress"):
+            v = targets_map.get(c["key"])
+            tv = float(v) if isinstance(v, (int, float)) else (_safe_float(v) or 0.0)
+            break
 
     r = ProgramBaselineRow(
         baseline_id=baseline.id,
-        row_no=row_no,
-        title=(title or "").strip(),
-        unit=(unit or "").strip(),
-        start_year=start_year,
-        end_year=end_year,
-        target_value=tv,
-        notes=(notes or "").strip(),
+        row_no=int(core_vals.get("row_no") or 0),
+        title=str(core_vals.get("title") or ""),
+        unit=str(core_vals.get("unit") or ""),
+        start_year=int(core_vals.get("start_year") or 0),
+        end_year=int(core_vals.get("end_year") or 0),
+        target_value=float(tv or 0.0),
+        notes=str(core_vals.get("notes") or ""),
+        data_json=json.dumps(data_map, ensure_ascii=False),
+        targets_json=json.dumps(targets_map, ensure_ascii=False),
     )
     db.add(r)
     db.commit()
@@ -303,17 +414,10 @@ def baseline_add_row(
 
 
 @router.post("/{type_id}/baseline/row/{row_id}/update", response_class=RedirectResponse)
-def baseline_update_row(
+async def baseline_update_row(
     type_id: int,
     row_id: int,
     request: Request,
-    row_no: int = Form(...),
-    title: str = Form(...),
-    unit: str = Form(""),
-    start_year: int = Form(...),
-    end_year: int = Form(...),
-    target_value: str = Form(...),
-    notes: str = Form(""),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -327,16 +431,46 @@ def baseline_update_row(
     baseline = db.get(ProgramBaseline, r.baseline_id)
     require(baseline is not None and baseline.org_id == t.org_id and baseline.form_type_id == t.id, "دسترسی غیرمجاز", 403)
 
-    tv = _safe_float(target_value)
-    require(tv is not None, "هدف باید عدد باشد.", 400)
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    cols = normalize_columns(schema)
+    defaults = safe_defaults_for_core()
+    form = await request.form()
 
-    r.row_no = row_no
-    r.title = (title or "").strip()
-    r.unit = (unit or "").strip()
-    r.start_year = start_year
-    r.end_year = end_year
-    r.target_value = tv
-    r.notes = (notes or "").strip()
+    core_vals = {k: getattr(r, k, defaults[k]) for k in defaults}
+    data_map = parse_json_map(getattr(r, "data_json", "{}"))
+    targets_map = parse_json_map(getattr(r, "targets_json", "{}"))
+
+    for c in cols:
+        if not c.get("in_baseline"):
+            continue
+        key = c["key"]
+        raw = form.get(key)
+        val = coerce_value(raw, c.get("type"))
+        if c.get("required"):
+            require(val is not None and str(val) != "", f"فیلد «{c.get('label') or key}» الزامی است.", 400)
+        if c.get("is_target"):
+            targets_map[key] = val
+        elif key in defaults:
+            core_vals[key] = val if val is not None else defaults[key]
+        else:
+            data_map[key] = val
+
+    tv = float(getattr(r, "target_value", 0.0) or 0.0)
+    for c in cols:
+        if c.get("is_target") and c.get("use_for_progress"):
+            v = targets_map.get(c["key"])
+            tv = float(v) if isinstance(v, (int, float)) else (_safe_float(v) or 0.0)
+            break
+
+    r.row_no = int(core_vals.get("row_no") or 0)
+    r.title = str(core_vals.get("title") or "")
+    r.unit = str(core_vals.get("unit") or "")
+    r.start_year = int(core_vals.get("start_year") or 0)
+    r.end_year = int(core_vals.get("end_year") or 0)
+    r.target_value = float(tv or 0.0)
+    r.notes = str(core_vals.get("notes") or "")
+    r.data_json = json.dumps(data_map, ensure_ascii=False)
+    r.targets_json = json.dumps(targets_map, ensure_ascii=False)
     db.add(r)
     db.commit()
     return RedirectResponse(url=f"/programs/{t.id}/baseline", status_code=303)

@@ -32,37 +32,72 @@
     <input type="hidden" name="period_no" value="{{ period_no }}">
 
     <div class="table-responsive">
+      {% set has_targets = (entry_target_cols and entry_target_cols|length > 0) %}
       <table class="table table-sm align-middle">
         <thead>
           <tr>
-            <th style="width: 70px;">ردیف</th>
-            <th>عنوان</th>
-            <th style="width: 110px;">واحد</th>
-            <th style="width: 160px;">نتیجه/عملکرد این بازه</th>
-            <th>اقدامات/شرح اقدامات</th>
+            {% for c in (entry_cols or []) %}
+              <th style="min-width:140px">{{ c.label }}</th>
+              {% if c.is_target %}
+                <th style="width: 160px;">عملکرد {{ c.label }}</th>
+              {% endif %}
+            {% endfor %}
+
+            {% if not has_targets %}
+              <th style="width: 160px;">نتیجه/عملکرد این بازه</th>
+            {% endif %}
+            <th style="min-width:260px">اقدامات/شرح اقدامات</th>
           </tr>
         </thead>
         <tbody>
-          {% for br in baseline_rows %}
+          {% for item in baseline_rows %}
+            {% set br = item.row %}
+            {% set data = item.data %}
+            {% set targets = item.targets %}
             {% set pr = prows_map.get(br.id) %}
+            {% set rmap = (prows_results_map.get(br.id) or {}) %}
             <tr>
+              {% for c in (entry_cols or []) %}
+                {% set key = c.key %}
+                {% if c.is_target %}
+                  <td class="small text-muted">{{ targets.get(key, '') }}</td>
+                  <td>
+                    <input name="result__{{ key }}__{{ br.id }}" class="form-control form-control-sm" placeholder="عدد" value="{{ rmap.get(key, '') }}">
+                  </td>
+                {% elif key == 'row_no' %}
+                  <td>
+                    {{ br.row_no }}
+                    <input type="hidden" name="row_id" value="{{ br.id }}">
+                  </td>
+                {% elif key == 'title' %}
+                  <td style="white-space: normal; min-width: 220px;">{{ br.title }}</td>
+                {% elif key == 'unit' %}
+                  <td>{{ br.unit }}</td>
+                {% elif key == 'start_year' %}
+                  <td>{{ br.start_year }}</td>
+                {% elif key == 'end_year' %}
+                  <td>{{ br.end_year }}</td>
+                {% elif key == 'notes' %}
+                  <td style="white-space: normal;">{{ br.notes }}</td>
+                {% else %}
+                  <td style="white-space: normal;">{{ data.get(key, '') }}</td>
+                {% endif %}
+              {% endfor %}
+
+              {% if not has_targets %}
+                <td>
+                  <input name="result__single__{{ br.id }}" class="form-control form-control-sm" placeholder="عدد" value="{{ pr.result_value if pr and pr.result_value is not none else '' }}">
+                </td>
+              {% endif %}
+
               <td>
-                {{ br.row_no }}
-                <input type="hidden" name="row_id" value="{{ br.id }}">
-              </td>
-              <td style="white-space: normal; min-width: 220px;">{{ br.title }}</td>
-              <td>{{ br.unit }}</td>
-              <td>
-                <input name="result_value" class="form-control form-control-sm" placeholder="عدد" value="{{ pr.result_value if pr and pr.result_value is not none else '' }}">
-              </td>
-              <td>
-                <textarea name="actions_text" class="form-control form-control-sm" rows="2" placeholder="متن اقدامات...">{{ pr.actions_text if pr else '' }}</textarea>
+                <textarea name="actions__{{ br.id }}" class="form-control form-control-sm" rows="2" placeholder="متن اقدامات...">{{ pr.actions_text if pr else '' }}</textarea>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
+    </div></div>
 
     <button class="btn btn-primary" type="submit">ذخیره</button>
     <span class="text-muted small ms-2">برای درج خروجی پایش برنامه در گزارش، از بخش «گزارش‌ها» و داخل گزارش «افزودن پایش برنامه» را بزنید.</span>

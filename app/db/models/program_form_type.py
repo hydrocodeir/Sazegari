@@ -30,4 +30,7 @@ class ProgramFormType(Base):
         default="نتیجه‌گیری: (متن ثابت/قابل‌ویرایش توسط کارشناس استان)",
     )
 
+    # Dynamic schema for program baseline (JSON stored as text)
+    baseline_schema_json: Mapped[str] = mapped_column(Text, default="")
+
     org = relationship("Org")

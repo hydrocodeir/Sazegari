@@ -24,6 +24,7 @@ from app.db.models.program_period import ProgramPeriodForm, ProgramPeriodRow
 from app.db.models.program_period_year_mode import ProgramPeriodYearMode
 from app.utils.schema import parse_schema, validate_payload, build_layout_blueprint
 from app.utils.badges import get_badge_count
+from app.utils.program_schema import load_schema, normalize_columns, split_columns, parse_json_map
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
@@ -493,7 +494,7 @@ def program_select_page(request: Request, db: Session = Depends(get_db), user=De
     # We only show records that contain at least one non-empty row (to avoid clutter from auto-created empty forms).
     non_empty_row_exists = exists().where(
         (ProgramPeriodRow.period_form_id == ProgramPeriodForm.id)
-        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != ""))
+        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != "", ProgramPeriodRow.results_json != "{}"))
     )
 
     history_forms = (
@@ -616,7 +617,7 @@ def program_entry_page(
     created_any = False
     for br in baseline_rows:
         if br.id not in existing_map:
-            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=br.id, result_value=None, actions_text="")
+            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=br.id, result_value=None, results_json="{}", actions_text="")
             db.add(pr)
             created_any = True
     if created_any:
@@ -625,10 +626,51 @@ def program_entry_page(
     prows = db.query(ProgramPeriodRow).filter(ProgramPeriodRow.period_form_id == pf.id).all()
     prows_map = {r.baseline_row_id: r for r in prows}
 
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    columns = normalize_columns(schema)
+    meta_cols, target_cols = split_columns(schema)
+
+    # progress target key (mirror into result_value for backward compatibility + progress calculations)
+    progress_target_key = None
+    for c in (target_cols or []):
+        if c.get("use_for_progress"):
+            progress_target_key = c.get("key")
+            break
+    if not progress_target_key and (target_cols or []):
+        progress_target_key = (target_cols[0] or {}).get("key")
+
+    entry_cols = [c for c in columns if c.get("in_entry")]
+    entry_target_cols = [c for c in (target_cols or []) if c.get("in_entry")]
+
+    # precompute row maps for template
+    prepared_rows = []
+    for br in baseline_rows:
+        prepared_rows.append(
+            {
+                "row": br,
+                "data": parse_json_map(getattr(br, "data_json", "{}")),
+                "targets": parse_json_map(getattr(br, "targets_json", "{}")),
+            }
+        )
+
+
+    # per-row results map (multi-target periodic results)
+    prows_results_map: dict[int, dict] = {}
+    for br in baseline_rows:
+        pr = prows_map.get(br.id)
+        rm = parse_json_map(getattr(pr, "results_json", None)) if pr else {}
+        # backward compatibility: if old data exists only in result_value, map it to progress target
+        if (not rm) and pr and (pr.result_value is not None) and progress_target_key:
+            try:
+                rm = {progress_target_key: float(pr.result_value)}
+            except Exception:
+                rm = {progress_target_key: pr.result_value}
+        prows_results_map[int(br.id)] = rm
+
     # Other saved periods for quick navigation (same type + same scope)
     non_empty_row_exists = exists().where(
         (ProgramPeriodRow.period_form_id == ProgramPeriodForm.id)
-        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != ""))
+        & (or_(ProgramPeriodRow.result_value.is_not(None), ProgramPeriodRow.actions_text != "", ProgramPeriodRow.results_json != "{}"))
     )
     other_forms = (
         db.query(ProgramPeriodForm)
@@ -662,9 +704,17 @@ def program_entry_page(
             "badge_count": get_badge_count(db, user),
             "t": t,
             "baseline": baseline,
-            "baseline_rows": baseline_rows,
+            "baseline_rows": prepared_rows,
             "pf": pf,
             "prows_map": prows_map,
+            "schema": schema,
+            "columns": columns,
+            "entry_cols": entry_cols,
+            "meta_cols": meta_cols,
+            "target_cols": target_cols,
+            "entry_target_cols": entry_target_cols,
+            "progress_target_key": progress_target_key,
+            "prows_results_map": prows_results_map,
             "year": int(year),
             "period_type": pt,
             "period_no": pn,
@@ -676,22 +726,38 @@ def program_entry_page(
 
 
 @router.post("/program/entry", response_class=RedirectResponse)
-def program_entry_save(
+async def program_entry_save(
     request: Request,
-    type_id: int = Form(...),
-    year: int = Form(...),
-    period_type: str = Form(...),
-    period_no: int = Form(...),
-    row_id: list[int] = Form(...),
-    result_value: list[str] = Form(...),
-    actions_text: list[str] = Form(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """Save periodic program monitoring data.
+
+    Supports multi-target results.
+
+    Form inputs (per baseline row):
+      - row_id: repeated baseline_row_id
+      - actions__<row_id>
+      - result__<target_key>__<row_id>   (for each target column shown in entry)
+
+    Backward compatible:
+      - result__single__<row_id> when no targets are shown in entry.
+
+    We keep ProgramPeriodRow.result_value mirrored to the selected progress target
+    so older logic (annual/cumulative/progress) remains functional.
+    """
+
     require(can_submit_data(user))
     _require_program_user(user)
 
     scope_county_id = _scope_county_id(user)
+
+    form = await request.form()
+
+    type_id = int(form.get("type_id") or 0)
+    year = int(form.get("year") or 0)
+    period_type = str(form.get("period_type") or "")
+    period_no = int(form.get("period_no") or 0)
 
     pt, pn = _validate_period(period_type, period_no)
     t = db.get(ProgramFormType, int(type_id))
@@ -725,19 +791,66 @@ def program_entry_save(
     )
     require(pf is not None, "فرم دوره‌ای یافت نشد.", 404)
 
-    # Update rows
-    for i, br_id in enumerate(row_id):
-        rv = _safe_float(result_value[i] if i < len(result_value) else None)
-        at = (actions_text[i] if i < len(actions_text) else "") or ""
+    schema = load_schema(getattr(t, "baseline_schema_json", ""))
+    _meta_cols, target_cols = split_columns(schema)
+
+    progress_target_key = None
+    for c in (target_cols or []):
+        if c.get("use_for_progress"):
+            progress_target_key = c.get("key")
+            break
+    if not progress_target_key and (target_cols or []):
+        progress_target_key = (target_cols[0] or {}).get("key")
+
+    entry_target_cols = [c for c in (target_cols or []) if c.get("in_entry")]
+
+    row_ids = [int(x) for x in (form.getlist("row_id") or []) if str(x).strip()]
+
+    for br_id in row_ids:
+        results_map: dict[str, float] = {}
+
+        if entry_target_cols:
+            for c in entry_target_cols:
+                k = str(c.get("key") or "").strip()
+                if not k:
+                    continue
+                rv = _safe_float(form.get(f"result__{k}__{br_id}"))
+                if rv is not None:
+                    results_map[k] = float(rv)
+        else:
+            # fallback (single-result mode)
+            rv = _safe_float(form.get(f"result__single__{br_id}"))
+            if rv is not None:
+                if progress_target_key:
+                    results_map[progress_target_key] = float(rv)
+                else:
+                    results_map["result"] = float(rv)
+
+        # actions text
+        at = (form.get(f"actions__{br_id}") or "")
+        at = (" ".join(str(at).split())).strip()
+
         pr = (
             db.query(ProgramPeriodRow)
             .filter(ProgramPeriodRow.period_form_id == pf.id, ProgramPeriodRow.baseline_row_id == int(br_id))
             .first()
         )
         if pr is None:
-            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=int(br_id))
-        pr.result_value = rv
-        pr.actions_text = at.strip()
+            pr = ProgramPeriodRow(period_form_id=pf.id, baseline_row_id=int(br_id), result_value=None, results_json="{}", actions_text="")
+
+        # mirror selected target into result_value for legacy logic
+        mirror_val = None
+        if progress_target_key:
+            mirror_val = results_map.get(progress_target_key)
+        if mirror_val is None and results_map:
+            try:
+                mirror_val = float(next(iter(results_map.values())))
+            except Exception:
+                mirror_val = next(iter(results_map.values()))
+
+        pr.result_value = mirror_val
+        pr.results_json = json.dumps(results_map or {}, ensure_ascii=False)
+        pr.actions_text = at
         db.add(pr)
 
     # Create year mode lock on first successful save
@@ -756,7 +869,6 @@ def program_entry_save(
         url=f"/submissions/program/entry?type_id={t.id}&year={int(year)}&period_type={pt}&period_no={pn}&saved=1",
         status_code=303,
     )
-
 
 @router.post("/program/delete", response_class=RedirectResponse)
 def program_period_delete(

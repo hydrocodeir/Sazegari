@@ -5,6 +5,9 @@
 {% set forms_meta = agg.forms or {} %}
 
 <div id="sectionsContainer">
+{% if msg %}
+  <div class="alert alert-warning py-2 small mb-3">{{ msg }}</div>
+{% endif %}
 {% if doc.sections and doc.sections|length>0 %}
   {% for sec in doc.sections %}
     {% set sid = sec.submission_id %}

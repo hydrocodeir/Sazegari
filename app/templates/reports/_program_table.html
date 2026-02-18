@@ -1,39 +1,141 @@
-{# Program monitoring comparative table (snapshot) #}
+{# Program monitoring comparative table (snapshot) - dynamic multi-target header #}
+
+{% set meta_cols = data.report_meta_cols or [] %}
+{% set tcols = data.report_target_cols or [] %}
+{% set tcols_rev = tcols | reverse | list %}
+{% set years = data.year_cols or [] %}
+{% set tcount = (tcols_rev | length) %}
+{% set tcount_safe = (tcount if tcount > 0 else 1) %}
+
+{% macro goal_header(lbl) -%}
+  {%- set s = (lbl or '') | string -%}
+  {%- if 'هدف' in s -%}{{ s }}{%- else -%}هدف {{ s }}{%- endif -%}
+{%- endmacro %}
+
+{% macro sublbl(lbl) -%}
+  {%- set s = (lbl or '') | string -%}
+  {%- set s2 = s.replace('هدف', '') | trim -%}
+  {{ s2 if s2 else s }}
+{%- endmacro %}
 
 <div class="table-responsive">
-  <table class="table table-sm table-bordered align-middle text-center mb-0">
+  <table dir="rtl" class="table table-sm table-bordered align-middle text-center mb-0" style="font-size:0.9rem">
     <thead class="table-light">
       <tr>
-        <th style="min-width:60px">رديف</th>
-        <th style="min-width:260px">نام پروژه</th>
-        <th style="min-width:110px">سال شروع پروژه</th>
-        <th style="min-width:140px">پیش‌بینی سال خاتمه</th>
-        <th style="min-width:160px">{{ data.target_header or 'هدف' }}</th>
-        {% for y in (data.year_cols or []) %}
-          <th style="min-width:140px">عملکرد سال {{ y }}</th>
+        {# Meta columns (rowspan=2) #}
+        {% for c in meta_cols %}
+          <th rowspan="2" style="min-width:120px">{{ c.label }}</th>
         {% endfor %}
-        <th style="min-width:180px">{{ data.current_perf_label or data.current_label }}</th>
-        <th style="min-width:180px">اقدامات از ابتدای برنامه</th>
-        <th style="min-width:180px">درصد پیشرفت کلی برنامه</th>
+
+        {# Target (goal) columns (rowspan=2) #}
+        {% for c in tcols_rev %}
+          <th rowspan="2" style="min-width:120px">{{ goal_header(c.label) }}</th>
+        {% endfor %}
+
+        {# Year groups (colspan = number of targets) #}
+        {% for y in years %}
+          <th colspan="{{ tcount_safe }}" style="min-width:{{ 120 * tcount_safe }}px">عملکرد سال {{ y }}</th>
+        {% endfor %}
+
+        {# Actions column (rowspan=2) #}
+        <th rowspan="2" style="min-width:260px">اقدامات از ابتدای برنامه</th>
+
+        {# Cumulative totals group #}
+        <th colspan="{{ tcount_safe }}" style="min-width:{{ 120 * tcount_safe }}px">مقدار تجمعی کلی سال‌ها</th>
+
+        {# Progress group #}
+        <th colspan="{{ tcount_safe }}" style="min-width:{{ 110 * tcount_safe }}px">درصد پیشرفت کلی برنامه</th>
+      </tr>
+      <tr>
+        {# sub headers for each year group #}
+        {% for y in years %}
+          {% if tcount > 0 %}
+            {% for c in tcols_rev %}
+              <th style="min-width:90px">{{ sublbl(c.label) }}</th>
+            {% endfor %}
+          {% else %}
+            <th style="min-width:90px">مقدار</th>
+          {% endif %}
+        {% endfor %}
+
+        {# sub headers for cumulative group #}
+        {% if tcount > 0 %}
+          {% for c in tcols_rev %}
+            <th style="min-width:90px">{{ sublbl(c.label) }}</th>
+          {% endfor %}
+        {% else %}
+          <th style="min-width:90px">مقدار</th>
+        {% endif %}
+
+        {# sub headers for progress group #}
+        {% if tcount > 0 %}
+          {% for c in tcols_rev %}
+            <th style="min-width:90px">{{ sublbl(c.label) }}</th>
+          {% endfor %}
+        {% else %}
+          <th style="min-width:90px">%</th>
+        {% endif %}
       </tr>
     </thead>
+
     <tbody>
       {% for r in (data.rows or []) %}
-        <tr>
-          <td>{{ r.row_no }}</td>
-          <td class="text-start">{{ r.title }}</td>
-          <td>{{ r.start_year }}</td>
-          <td>{{ r.end_year }}</td>
-          <td>{{ r.target_value_display }}</td>
-          {% for y in (data.year_cols or []) %}
-            <td>{{ (r.annual or {}).get(y, '') }}</td>
+        {% set is_total = r.get('is_total') %}
+        <tr class="{{ 'table-secondary fw-bold' if is_total else '' }}">
+          {# Meta values #}
+          {% for c in meta_cols %}
+            {% set v = (r.meta or {}).get(c.key, '') %}
+            {% if c.key == 'title' %}
+              <td class="text-start">{{ v }}</td>
+            {% else %}
+              <td>{{ v }}</td>
+            {% endif %}
           {% endfor %}
-          <td>{{ r.current }}</td>
-          <td>{{ r.cumulative_display }}</td>
-          <td>
-            {% set p = (r.progress or 0) * 100 %}
-            {{ "%.2f"|format(p) | replace('.00','') }}%
-          </td>
+
+          {# Target (goal) values #}
+          {% for c in tcols_rev %}
+            <td>{{ (r.targets or {}).get(c.key, '') }}</td>
+          {% endfor %}
+
+          {# Annual values per year per target #}
+          {% for y in years %}
+            {% for c in tcols_rev %}
+              <td>{{ ((r.annual_targets or {}).get(y, {}) or {}).get(c.key, '') }}</td>
+            {% endfor %}
+          {% endfor %}
+
+          {# Actions #}
+          <td class="text-start">{{ (r.actions or '') | safe }}</td>
+
+          {# Cumulative totals per target #}
+          {% if tcount > 0 %}
+            {% for c in tcols_rev %}
+              <td>{{ ((r.cumulative_targets_display or {}) or {}).get(c.key, '') }}</td>
+            {% endfor %}
+          {% else %}
+            <td>{{ r.cumulative_display or '' }}</td>
+          {% endif %}
+
+          {# Progress per target (no % sign, like sample) #}
+          {% if tcount > 0 %}
+            {% for c in tcols_rev %}
+              {% set ratio = (r.progress_targets or {}).get(c.key) %}
+              {% if ratio is not none %}
+                {% set p = ratio * 100 %}
+                <td>{{ ("%.1f"|format(p)) | replace('.0','') }}</td>
+              {% else %}
+                <td>—</td>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            {% set ratio = (r.progress or none) %}
+            {% if ratio is not none %}
+              {% set p = ratio * 100 %}
+              <td>{{ ("%.1f"|format(p)) | replace('.0','') }}</td>
+            {% else %}
+              <td>—</td>
+            {% endif %}
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>

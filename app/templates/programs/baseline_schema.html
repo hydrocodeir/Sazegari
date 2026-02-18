@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block page_title %}تنظیم ستون‌ها - {{ t.title }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <div class="text-muted small">برنامه پایش</div>
+    <h4 class="mb-0">تنظیم ستون‌ها (Schema)</h4>
+    <div class="small text-muted mt-1">
+      می‌توانید ستون‌ها را اضافه/حذف کنید، تعداد «هدف/تارگت» را تعیین کنید و یکی از آن‌ها را به عنوان مبنای درصد پیشرفت انتخاب کنید.
+    </div>
+  </div>
+  <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}/baseline"><i class="bi bi-arrow-right"></i> بازگشت</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="card p-3 border-0 shadow-sm">
+      <h6 class="mb-2">راهنمای سریع</h6>
+      <ul class="small text-muted mb-0">
+        <li><b>key</b>: نام یکتا (مثلاً <code>target_1</code>)</li>
+        <li><b>label</b>: عنوان نمایشی فارسی</li>
+        <li><b>is_target</b>: اگر ستون از نوع هدف/تارگت است</li>
+        <li><b>use_for_progress</b>: فقط برای یکی از تارگت‌ها = مبنای درصد پیشرفت</li>
+        <li><b>in_baseline / in_entry / in_report</b>: نمایش در فرم اولیه / ثبت دوره‌ای / گزارش</li>
+        <li>type: <code>text</code>، <code>textarea</code>، <code>int</code>، <code>number</code></li>
+      </ul>
+      <hr class="my-3" />
+      <div class="small text-muted">نمایش فعلی (خلاصه):</div>
+      <div class="table-responsive mt-2">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>کلید</th>
+              <th>عنوان</th>
+              <th>هدف</th>
+              <th>پیشرفت</th>
+              <th>Baseline</th>
+              <th>Entry</th>
+              <th>Report</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in (columns or []) %}
+              <tr>
+                <td class="small"><code>{{ c.key }}</code></td>
+                <td class="small">{{ c.label }}</td>
+                <td class="small">{% if c.is_target %}<span class="badge text-bg-info">Target</span>{% else %}-{% endif %}</td>
+                <td class="small">{% if c.use_for_progress %}<span class="badge text-bg-success">Yes</span>{% else %}-{% endif %}</td>
+                <td class="small">{{ '✓' if c.in_baseline else '—' }}</td>
+                <td class="small">{{ '✓' if c.in_entry else '—' }}</td>
+                <td class="small">{{ '✓' if c.in_report else '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card p-3 border-0 shadow-sm">
+      <h6 class="mb-2">ویرایش JSON</h6>
+      <form method="post" action="/programs/{{ t.id }}/baseline/schema" onsubmit="return confirm('اسکیما ذخیره شود؟');">
+        <textarea class="form-control font-monospace" name="schema_json" rows="22" dir="ltr">{{ schema_text }}</textarea>
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> ذخیره</button>
+          <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}/baseline">انصراف</a>
+        </div>
+        <div class="small text-muted mt-2">نکته: اگر ستون‌های اصلی را حذف کنید، سیستم مقدارهای پیش‌فرض امن ذخیره می‌کند و فقط در UI/گزارش نمایش نمی‌دهد.</div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

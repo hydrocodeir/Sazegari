@@ -6,8 +6,12 @@
   <div>
     <div class="text-muted small">فرم اولیه برنامه پایش</div>
     <h4 class="mb-0">{{ t.title }}</h4>
+    <div class="text-muted small mt-1">ستون‌ها و تعداد «هدف/تارگت» از طریق تنظیمات اسکیما قابل تغییر است.</div>
   </div>
-  <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}"><i class="bi bi-arrow-right"></i> بازگشت</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/programs/{{ t.id }}"><i class="bi bi-arrow-right"></i> بازگشت</a>
+    <a class="btn btn-outline-primary" href="/programs/{{ t.id }}/baseline/schema"><i class="bi bi-sliders"></i> تنظیم ستون‌ها</a>
+  </div>
 </div>
 
 <div class="card p-3 border-0 shadow-sm">
@@ -24,33 +28,62 @@
     <table class="table table-sm align-middle">
       <thead>
         <tr>
-          <th style="width:70px;">ردیف</th>
-          <th>عنوان پروژه/ردیف</th>
-          <th style="width:110px;">واحد</th>
-          <th style="width:120px;">سال شروع</th>
-          <th style="width:140px;">سال خاتمه</th>
-          <th style="width:160px;">هدف تا خاتمه</th>
-          <th style="width:140px;">عملیات</th>
+          {% for c in (columns or []) if c.in_baseline %}
+            <th style="min-width: 140px;">{{ c.label }}</th>
+          {% endfor %}
+          <th style="width: 140px;">عملیات</th>
         </tr>
       </thead>
       <tbody>
-        {% for r in rows %}
-        <tr>
-          <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/update">
-            <td><input class="form-control form-control-sm" name="row_no" type="number" value="{{ r.row_no }}" required></td>
-            <td><input class="form-control form-control-sm" name="title" value="{{ r.title }}" required></td>
-            <td><input class="form-control form-control-sm" name="unit" value="{{ r.unit }}"></td>
-            <td><input class="form-control form-control-sm" name="start_year" type="number" value="{{ r.start_year }}" required></td>
-            <td><input class="form-control form-control-sm" name="end_year" type="number" value="{{ r.end_year }}" required></td>
-            <td><input class="form-control form-control-sm" name="target_value" type="number" step="any" value="{{ r.target_value }}" required></td>
-            <td class="d-flex gap-1">
-              <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
-          </form>
-              <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/delete" onsubmit="return confirm('حذف شود؟');">
-                <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
-              </form>
-            </td>
-        </tr>
+        {% for item in rows %}
+          {% set r = item.row %}
+          {% set data = item.data %}
+          {% set targets = item.targets %}
+          <tr>
+            <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/update">
+              {% for c in (columns or []) if c.in_baseline %}
+                {% set key = c.key %}
+                {% set typ = (c.type or 'text') %}
+                {% set v = '' %}
+                {% if c.is_target %}
+                  {% set v = targets.get(key, '') %}
+                {% elif key == 'row_no' %}
+                  {% set v = r.row_no %}
+                {% elif key == 'title' %}
+                  {% set v = r.title %}
+                {% elif key == 'unit' %}
+                  {% set v = r.unit %}
+                {% elif key == 'start_year' %}
+                  {% set v = r.start_year %}
+                {% elif key == 'end_year' %}
+                  {% set v = r.end_year %}
+                {% elif key == 'notes' %}
+                  {% set v = r.notes %}
+                {% else %}
+                  {% set v = data.get(key, '') %}
+                {% endif %}
+
+                <td>
+                  {% if typ in ['textarea'] %}
+                    <textarea class="form-control form-control-sm" name="{{ key }}" rows="2" {% if c.required %}required{% endif %}>{{ v }}</textarea>
+                  {% elif typ in ['int','integer'] %}
+                    <input class="form-control form-control-sm" name="{{ key }}" type="number" step="1" value="{{ v }}" {% if c.required %}required{% endif %}>
+                  {% elif typ in ['number','float','decimal'] %}
+                    <input class="form-control form-control-sm" name="{{ key }}" type="number" step="any" value="{{ v }}" {% if c.required %}required{% endif %}>
+                  {% else %}
+                    <input class="form-control form-control-sm" name="{{ key }}" value="{{ v }}" {% if c.required %}required{% endif %}>
+                  {% endif %}
+                </td>
+              {% endfor %}
+
+              <td class="d-flex gap-1">
+                <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
+            </form>
+                <form method="post" action="/programs/{{ t.id }}/baseline/row/{{ r.id }}/delete" onsubmit="return confirm('حذف شود؟');">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+                </form>
+              </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
@@ -60,27 +93,22 @@
 
   <h6 class="mb-2">افزودن ردیف جدید</h6>
   <form method="post" action="/programs/{{ t.id }}/baseline/add-row" class="row g-2">
-    <div class="col-12 col-md-1">
-      <input class="form-control" name="row_no" type="number" placeholder="ردیف" required>
-    </div>
-    <div class="col-12 col-md-5">
-      <input class="form-control" name="title" placeholder="عنوان پروژه/ردیف" required>
-    </div>
-    <div class="col-12 col-md-2">
-      <input class="form-control" name="unit" placeholder="واحد">
-    </div>
-    <div class="col-6 col-md-1">
-      <input class="form-control" name="start_year" type="number" placeholder="شروع" required>
-    </div>
-    <div class="col-6 col-md-1">
-      <input class="form-control" name="end_year" type="number" placeholder="خاتمه" required>
-    </div>
-    <div class="col-12 col-md-2">
-      <input class="form-control" name="target_value" type="number" step="any" placeholder="هدف" required>
-    </div>
-    <div class="col-12">
-      <textarea class="form-control" name="notes" rows="2" placeholder="یادداشت (اختیاری)"></textarea>
-    </div>
+    {% for c in (columns or []) if c.in_baseline %}
+      {% set key = c.key %}
+      {% set typ = (c.type or 'text') %}
+      <div class="col-12 col-md-4">
+        <label class="form-label small text-muted mb-1">{{ c.label }}</label>
+        {% if typ in ['textarea'] %}
+          <textarea class="form-control" name="{{ key }}" rows="2" {% if c.required %}required{% endif %}></textarea>
+        {% elif typ in ['int','integer'] %}
+          <input class="form-control" name="{{ key }}" type="number" step="1" {% if c.required %}required{% endif %}>
+        {% elif typ in ['number','float','decimal'] %}
+          <input class="form-control" name="{{ key }}" type="number" step="any" {% if c.required %}required{% endif %}>
+        {% else %}
+          <input class="form-control" name="{{ key }}" {% if c.required %}required{% endif %}>
+        {% endif %}
+      </div>
+    {% endfor %}
     <div class="col-12">
       <button class="btn btn-success" type="submit"><i class="bi bi-plus-circle"></i> افزودن</button>
     </div>

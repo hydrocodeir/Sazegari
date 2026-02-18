@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from fastapi import APIRouter, Request, Depends, Form, Query
+from fastapi import APIRouter, Request, Depends, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -1120,24 +1120,33 @@ def add_program_section(
         require(effective_mode in ("province", "county_agg"), "حالت خروجی پایش برنامه معتبر نیست.", 400)
 
     # Auto-pick the latest available period for the selected scope.
-    sel = resolve_latest_period(
-        db=db,
-        org_id=int(r.org_id),
-        form_type_id=int(form_type_id),
-        mode=effective_mode,
-        county_id=int(county_id),
-    )
+    try:
+        sel = resolve_latest_period(
+            db=db,
+            org_id=int(r.org_id),
+            form_type_id=int(form_type_id),
+            mode=effective_mode,
+            county_id=int(county_id),
+        )
 
-    data = build_program_report(
-        db=db,
-        org_id=int(r.org_id),
-        form_type_id=int(form_type_id),
-        year=int(sel["year"]),
-        period_type=str(sel["period_type"]),
-        period_no=int(sel["period_no"]),
-        mode=effective_mode,
-        county_id=int(county_id),
-    )
+        data = build_program_report(
+            db=db,
+            org_id=int(r.org_id),
+            form_type_id=int(form_type_id),
+            year=int(sel["year"]),
+            period_type=str(sel["period_type"]),
+            period_no=int(sel["period_no"]),
+            mode=effective_mode,
+            county_id=int(county_id),
+        )
+    except HTTPException as ex:
+        # For HTMX: return a friendly message instead of a raw 400.
+        doc = load_doc(r.content_json)
+        return request.app.state.templates.TemplateResponse(
+            "reports/_sections.html",
+            {"request": request, "report": r, "doc": doc, "user": user, "can_edit": _can_edit(user, r), "msg": str(ex.detail)},
+            status_code=200,
+        )
 
     # Render a snapshot HTML table and store it in report JSON.
     table_html = request.app.state.templates.get_template("reports/_program_table.html").render({"data": data})
