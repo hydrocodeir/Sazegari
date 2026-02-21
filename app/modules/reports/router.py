@@ -605,6 +605,12 @@ def download_pdf(report_id: int, db: Session = Depends(get_db), user=Depends(get
 
     # compute fresh aggregation without mutating DB
     doc = load_doc(r.content_json)
+    # Safety: if there are linked submissions but doc['sections'] is stale/empty,
+    # synthesize sections for PDF output (do not write back to DB here).
+    try:
+        doc = _sync_sections(doc, _linked_submission_ids(db, r.id))
+    except Exception:
+        pass
     doc["aggregation"] = aggregate_content(db, r.id)
 
     attachments = (

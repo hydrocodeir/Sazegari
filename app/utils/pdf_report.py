@@ -218,8 +218,9 @@ class _CKHtmlToFlowables(HTMLParser):
         self._cell_is_header = False
 
     def _flush_paragraph(self):
-        txt = "".join(self._buf).strip()
-        if txt:
+        raw = "".join(self._buf)
+        if raw.strip():
+            txt = raw
             if self._pending_prefix:
                 txt = xml_escape(rtl(self._pending_prefix)) + txt
                 self._pending_prefix = ""
@@ -227,94 +228,92 @@ class _CKHtmlToFlowables(HTMLParser):
             self.flowables.append(Spacer(1, 4))
         self._buf = []
 
-    def _flush_cell(self):
-        # Convert current cell buffer into a Paragraph
-        txt = "".join(self._cell_buf).strip() or ""
+    def _flush_cell(self) -> Paragraph:
+        raw = "".join(self._cell_buf)
         style = self.cell_style_bold if self._cell_is_header else self.cell_style
-        para = Paragraph(txt, style) if txt else Paragraph("", style)
+        para = Paragraph(raw, style) if raw.strip() else Paragraph("", style)
         self._cell_buf = []
         self._cell_stack = []
         self._cell_is_header = False
         return para
 
-    
-def _finalize_table(self):
-    if not self._table_rows:
-        return
-    cols = max((len(r) for r in self._table_rows), default=0)
-    if cols <= 0:
-        return
+    def _finalize_table(self):
+        if not self._table_rows:
+            return
+        cols = max((len(r) for r in self._table_rows), default=0)
+        if cols <= 0:
+            return
 
-    # Pad rows to same column count
-    padded: list[list[Any]] = []
-    for r in self._table_rows:
-        row = list(r)
-        while len(row) < cols:
-            row.append(Paragraph("", self.cell_style))
-        padded.append(row)
+        # Pad rows to same column count
+        padded: list[list[Any]] = []
+        for r in self._table_rows:
+            row = list(r)
+            while len(row) < cols:
+                row.append(Paragraph("", self.cell_style))
+            padded.append(row)
 
-    # Detect a header row (usually <th> in first row)
-    has_header = False
-    if padded:
-        for c in padded[0]:
-            try:
-                if isinstance(c, Paragraph) and getattr(getattr(c, "style", None), "fontName", "") == self.font_bold:
-                    has_header = True
-                    break
-            except Exception:
-                continue
+        # Detect a header row (usually <th> in first row)
+        has_header = False
+        if padded:
+            for c in padded[0]:
+                try:
+                    if isinstance(c, Paragraph) and getattr(getattr(c, "style", None), "fontName", "") == self.font_bold:
+                        has_header = True
+                        break
+                except Exception:
+                    continue
 
-    # RTL-friendly tables: show the first logical column on the right
-    padded = [list(reversed(r)) for r in padded]
+        # RTL-friendly tables: show the first logical column on the right
+        padded = [list(reversed(r)) for r in padded]
 
-    # Smarter column widths: proportional to content (with a reasonable minimum)
-    lens = [1] * cols
-    for r in padded:
-        for idx, cell in enumerate(r):
-            try:
-                txt = cell.getPlainText() if hasattr(cell, "getPlainText") else str(cell)
-            except Exception:
-                txt = ""
-            txt = (txt or "").strip()
-            if txt:
-                lens[idx] = max(lens[idx], len(txt))
+        # Smarter column widths: proportional to content (with a reasonable minimum)
+        lens = [1] * cols
+        for r in padded:
+            for idx, cell in enumerate(r):
+                try:
+                    txt = cell.getPlainText() if hasattr(cell, "getPlainText") else str(cell)
+                except Exception:
+                    txt = ""
+                txt = (txt or "").strip()
+                if txt:
+                    lens[idx] = max(lens[idx], len(txt))
 
-    total = sum(lens) or cols
-    min_w = 2.0 * cm
-    widths = [max(min_w, self.max_width * (l / total)) for l in lens]
-    s = sum(widths)
-    if s > 0:
-        scale = self.max_width / s
-        widths = [w * scale for w in widths]
+        total = sum(lens) or cols
+        min_w = 2.0 * cm
+        widths = [max(min_w, self.max_width * (l / total)) for l in lens]
+        s = sum(widths)
+        if s > 0:
+            scale = self.max_width / s
+            widths = [w * scale for w in widths]
 
-    t = Table(padded, colWidths=widths, hAlign="RIGHT", repeatRows=1 if has_header else 0)
-    t.splitByRow = 1
+        t = Table(padded, colWidths=widths, hAlign="RIGHT", repeatRows=1 if has_header else 0)
+        t.splitByRow = 1
 
-    tstyle = [
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]
-
-    start_row = 0
-    if has_header:
-        tstyle += [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6f8fa")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#24292f")),
+        tstyle = [
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d7de")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ]
-        start_row = 1
 
-    # Zebra rows for readability
-    tstyle.append(("ROWBACKGROUNDS", (0, start_row), (-1, -1), [colors.white, colors.HexColor("#fbfbfc")]))
+        start_row = 0
+        if has_header:
+            tstyle += [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6f8fa")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#24292f")),
+            ]
+            start_row = 1
 
-    t.setStyle(TableStyle(tstyle))
-    self.flowables.append(t)
-    self.flowables.append(Spacer(1, 6))
-    self._table_rows = []
+        # Zebra rows for readability
+        tstyle.append(("ROWBACKGROUNDS", (0, start_row), (-1, -1), [colors.white, colors.HexColor("#fbfbfc")]))
+
+        t.setStyle(TableStyle(tstyle))
+        self.flowables.append(t)
+        self.flowables.append(Spacer(1, 6))
+        self._table_rows = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         tag = (tag or "").lower()
@@ -336,7 +335,9 @@ def _finalize_table(self):
                 self._in_table = True
                 self._table_rows = []
             return
+
         if self._in_table:
+            # Ignore structural wrappers like thead/tbody/tfoot
             if tag == "tr":
                 self._current_row = []
                 return
@@ -346,6 +347,7 @@ def _finalize_table(self):
                 self._cell_stack = []
                 self._cell_is_header = (tag == "th")
                 return
+
             # Allow basic inline formatting inside cells
             if self._in_cell:
                 if tag in ("b", "strong"):
@@ -365,7 +367,7 @@ def _finalize_table(self):
                     self._cell_buf.append(f'<a href="{xml_escape(href)}">')
                     self._cell_stack.append("</a>")
                     return
-                # Nested <p> inside cell -> line break
+                # Nested <p>/<div> inside cell -> line break
                 if tag in ("p", "div"):
                     self._cell_buf.append("<br/>")
                     return
@@ -407,11 +409,13 @@ def _finalize_table(self):
                     self._current_row.append(para)
                 self._in_cell = False
                 return
+
             if tag == "tr":
                 if self._current_row is not None:
                     self._table_rows.append(self._current_row)
                 self._current_row = None
                 return
+
             if tag == "table":
                 self._finalize_table()
                 self._in_table = False
@@ -436,14 +440,13 @@ def _finalize_table(self):
     def handle_data(self, data: str):
         if data is None:
             return
-        # skip purely whitespace-only chunks
-        t = data
-        if not t:
+        if data == "":
             return
+
         if self._in_cell:
-            self._cell_buf.append(xml_escape(rtl(t)))
+            self._cell_buf.append(xml_escape(rtl(data)))
         else:
-            self._buf.append(xml_escape(rtl(t)))
+            self._buf.append(xml_escape(rtl(data)))
 
     def close(self):
         super().close()
