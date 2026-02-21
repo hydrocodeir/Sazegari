@@ -1,0 +1,108 @@
+{% set scope_label = 'همه' %}
+{% if selected_county_id is not none %}
+  {% if selected_county_id == 0 %}
+    {% set scope_label = 'استان' %}
+  {% else %}
+    {% set scope_label = county_name_by_id.get(selected_county_id, selected_county_id) %}
+  {% endif %}
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card p-3 border-0 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <div class="h6 m-0">داده‌های ثبت‌شده</div>
+          <div class="text-muted small">حوزه: {{ scope_label }} (تا 200 مورد)</div>
+        </div>
+      </div>
+
+      {% if subs and subs|length>0 %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>فرم</th>
+                <th>حوزه</th>
+                <th>ثبت‌کننده</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in subs %}
+                <tr>
+                  <td>{{ s.id }}</td>
+                  <td>{{ forms_map.get(s.form_id, 'form#'+(s.form_id|string)) }}</td>
+                  <td>
+                    {% if s.county_id %}
+                      {{ county_name_by_id.get(s.county_id, s.county_id) }}
+                    {% else %}
+                      استان
+                    {% endif %}
+                  </td>
+                  <td>{{ s.created_by_id }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ s.id }}">مشاهده</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted">موردی وجود ندارد.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card p-3 border-0 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <div class="h6 m-0">فرم‌ها/گزارش‌های وارد شده</div>
+          <div class="text-muted small">حوزه: {{ scope_label }} (تا 200 مورد)</div>
+        </div>
+      </div>
+
+      {% if reports and reports|length>0 %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>نوع</th>
+                <th>حوزه</th>
+                <th>وضعیت</th>
+                <th>در صف</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in reports %}
+                <tr>
+                  <td>{{ r.id }}</td>
+                  <td>{{ r.kind_label }}</td>
+                  <td>
+                    {% if r.county_id %}
+                      {{ county_name_by_id.get(r.county_id, r.county_id) }}
+                    {% else %}
+                      استان
+                    {% endif %}
+                  </td>
+                  <td>{{ r.status_label }}</td>
+                  <td>{{ owner_names.get(r.current_owner_id, r.current_owner_id) if r.current_owner_id else '-' }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">مشاهده</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted">موردی وجود ندارد.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

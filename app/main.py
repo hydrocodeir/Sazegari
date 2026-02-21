@@ -32,6 +32,7 @@ from app.db.models.user import User, Role
 from app.db.models.report import Report
 from app.db.models.submission import Submission
 from app.db.models.org_county import OrgCountyUnit
+from app.db.models.county import County
 
 from app.auth.router import router as auth_router
 from app.modules.orgs.router import router as orgs_router
@@ -45,6 +46,7 @@ from app.modules.submissions.router import router as submissions_router
 from app.modules.reports.router import router as reports_router
 from app.modules.programs.router import router as programs_router
 from app.modules.audit.router import router as audit_router
+from app.modules.dashboard.router import router as dashboard_router
 
 
 logger = logging.getLogger("water_compat")
@@ -240,6 +242,7 @@ app.include_router(submissions_router)
 app.include_router(reports_router)
 app.include_router(programs_router)
 app.include_router(audit_router)
+app.include_router(dashboard_router)
 
 
 @app.on_event("startup")
@@ -331,6 +334,29 @@ def home(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
         "total_reports": reports_q.count(),
         "total_submissions": subs_q.count(),
     }
+
+    # Dashboard ویژه مدیر استان
+    if user.role == Role.ORG_PROV_MANAGER:
+        counties = []
+        if user.org_id is not None:
+            counties = (
+                db.query(County)
+                .join(OrgCountyUnit, County.id == OrgCountyUnit.county_id)
+                .filter(OrgCountyUnit.org_id == user.org_id)
+                .order_by(County.name.asc())
+                .all()
+            )
+        return templates.TemplateResponse(
+            "dashboard_prov_manager.html",
+            {
+                "request": request,
+                "user": user,
+                "badge_count": kpi["unread_notifications"],
+                "kpi": kpi,
+                "counties": counties,
+            },
+        )
+
     return templates.TemplateResponse(
         "dashboard.html",
         {"request": request, "user": user, "badge_count": kpi["unread_notifications"], "kpi": kpi},

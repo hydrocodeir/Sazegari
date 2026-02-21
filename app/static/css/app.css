@@ -318,6 +318,49 @@ body{
 }
 .cke_toolbar_separator{ opacity: .4; }
 
+/* ------------------------------------------------------------------
+   Provincial manager dashboard: simple column chart for program monitoring
+   ------------------------------------------------------------------ */
+.prog-legend{
+  width: 14px;
+  height: 10px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.prog-legend.target{ background: rgba(var(--bs-primary-rgb), .25); border: 1px solid rgba(var(--bs-primary-rgb), .35); }
+.prog-legend.achieved{ background: rgba(var(--bs-success-rgb), .55); border: 1px solid rgba(var(--bs-success-rgb), .65); }
+
+.prog-chart{
+  display: flex;
+  align-items: flex-end;
+  gap: .65rem;
+  padding: .5rem 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.prog-bar-group{
+  flex: 0 0 auto;
+  width: 110px;
+  text-align: center;
+}
+.prog-bars{
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  height: 180px;
+  padding: .25rem .25rem 0;
+  border-bottom: 1px solid rgba(15,23,42,.12);
+}
+.prog-bar{
+  width: 18px;
+  border-radius: 8px 8px 0 0;
+}
+.prog-bar.target{ background: rgba(var(--bs-primary-rgb), .25); border: 1px solid rgba(var(--bs-primary-rgb), .35); }
+.prog-bar.achieved{ background: rgba(var(--bs-success-rgb), .55); border: 1px solid rgba(var(--bs-success-rgb), .65); }
+.prog-bar-label{ font-size: .72rem; margin-top: .4rem; }
+.prog-bar-values{ font-size: .7rem; color: rgba(15,23,42,.58); }
+
 /* Report page helpers */
 .report-hero{
   background: linear-gradient(135deg, rgba(13,110,253,.10), rgba(20,184,166,.08));
@@ -353,6 +396,11 @@ body{
 
 /* Small helpers */
 .text-muted{ color: rgba(15,23,42,.58) !important; }
+
+/* HTMX loading indicators */
+.htmx-indicator{ display: none; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator{ display: inline-block; }
 
 /* Scrollbar (nice, subtle) */
 *{ scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.5) transparent; }

@@ -23,7 +23,7 @@ services:
       redis:
         condition: service_started
     ports:
-      - "8000:8000"
+      - "8080:8000"
     volumes:
       - ./pip.conf:/etc/pip.conf:ro
       - ./uploads:/app/uploads

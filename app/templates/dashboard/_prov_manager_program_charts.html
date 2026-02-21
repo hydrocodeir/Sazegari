@@ -1,0 +1,78 @@
+{% if not charts or charts|length == 0 %}
+  <div class="text-muted">برای نمایش گراف پایش برنامه، هنوز داده‌ای ثبت نشده است.</div>
+{% else %}
+  <div class="d-flex align-items-center gap-3 small text-muted mb-2">
+    <span class="d-inline-flex align-items-center gap-1"><span class="prog-legend target"></span> هدف</span>
+    <span class="d-inline-flex align-items-center gap-1"><span class="prog-legend achieved"></span> تحقق</span>
+    <span class="ms-auto">(نمایش: تجمیع شهرستان‌ها)</span>
+  </div>
+
+  <div class="accordion" id="provProgramAccordion">
+    {% for ch in charts %}
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="provProgHead{{ ch.type.id }}">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#provProgCol{{ ch.type.id }}" aria-expanded="false" aria-controls="provProgCol{{ ch.type.id }}">
+            {{ ch.type.title }}
+            {% if ch.latest_label %}
+              <span class="badge text-bg-light ms-2">آخرین بازه: {{ ch.latest_label }}</span>
+            {% endif %}
+          </button>
+        </h2>
+        <div id="provProgCol{{ ch.type.id }}" class="accordion-collapse collapse" aria-labelledby="provProgHead{{ ch.type.id }}" data-bs-parent="#provProgramAccordion">
+          <div class="accordion-body">
+
+            {% if not ch.rows or ch.rows|length == 0 %}
+              <div class="text-muted">برای این تیپ فرم هنوز داده‌ای ثبت نشده است.</div>
+            {% else %}
+              <div class="prog-chart" role="img" aria-label="نمودار هدف و تحقق">
+                {% for r in ch.rows %}
+                  <div class="prog-bar-group" title="{{ r.title }}">
+                    <div class="prog-bars">
+                      <div class="prog-bar target" style="height: {{ '%.2f'|format(r.target_h) }}px" title="هدف: {{ r.target_disp }}"></div>
+                      <div class="prog-bar achieved" style="height: {{ '%.2f'|format(r.achieved_h) }}px" title="تحقق: {{ r.achieved_disp }}"></div>
+                    </div>
+                    <div class="prog-bar-label text-truncate">{{ r.row_no }}. {{ r.title }}</div>
+                    <div class="prog-bar-values">{{ r.achieved_disp }}/{{ r.target_disp }} {{ r.unit }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+
+              <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>پروژه/ردیف</th>
+                      <th>واحد</th>
+                      <th>هدف</th>
+                      <th>تحقق</th>
+                      <th>درصد تحقق</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in ch.rows %}
+                      <tr>
+                        <td>{{ r.row_no }}</td>
+                        <td>{{ r.title }}</td>
+                        <td>{{ r.unit }}</td>
+                        <td>{{ r.target_disp }}</td>
+                        <td>{{ r.achieved_disp }}</td>
+                        <td style="min-width: 160px">
+                          <div class="progress" style="height: 10px">
+                            <div class="progress-bar" role="progressbar" style="width: {{ '%.0f'|format(r.progress_pct) }}%" aria-valuenow="{{ '%.0f'|format(r.progress_pct) }}" aria-valuemin="0" aria-valuemax="100"></div>
+                          </div>
+                          <div class="small text-muted mt-1">{{ '%.0f'|format(r.progress_pct) }}٪</div>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}

@@ -924,7 +924,8 @@ def program_period_delete(
 
 @router.get("/{submission_id}", response_class=HTMLResponse)
 def view(request: Request, submission_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    require(can_submit_data(user))
+    # مدیر استان اجازه مشاهده‌ی خواندنیِ ثبت‌ها را دارد (بدون امکان ثبت/ویرایش)
+    require(can_submit_data(user) or (user and user.role == Role.ORG_PROV_MANAGER))
     s = db.get(Submission, submission_id)
     require(s is not None, "یافت نشد", 404)
 
@@ -935,7 +936,7 @@ def view(request: Request, submission_id: int, db: Session = Depends(get_db), us
             "دسترسی غیرمجاز",
             403,
         )
-    elif user.role == Role.ORG_PROV_EXPERT:
+    elif user.role in (Role.ORG_PROV_EXPERT, Role.ORG_PROV_MANAGER):
         require(user.org_id == s.org_id, "دسترسی غیرمجاز", 403)
     else:
         require(False, "دسترسی غیرمجاز", 403)
