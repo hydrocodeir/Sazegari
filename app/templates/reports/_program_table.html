@@ -12,7 +12,13 @@
         {% for y in (data.year_cols or []) %}
           <th style="min-width:140px">عملکرد سال {{ y }}</th>
         {% endfor %}
-        <th style="min-width:180px">{{ data.current_perf_label or data.current_label }}</th>
+        {% if data.current_cols %}
+          {% for c in (data.current_cols or []) %}
+            <th style="min-width:160px">{{ c.label }}</th>
+          {% endfor %}
+        {% else %}
+          <th style="min-width:180px">{{ data.current_perf_label or data.current_label }}</th>
+        {% endif %}
         <th style="min-width:180px">اقدامات از ابتدای برنامه</th>
         <th style="min-width:180px">درصد پیشرفت کلی برنامه</th>
       </tr>
@@ -28,7 +34,14 @@
           {% for y in (data.year_cols or []) %}
             <td>{{ (r.annual or {}).get(y, '') }}</td>
           {% endfor %}
-          <td>{{ r.current }}</td>
+          {% if data.current_cols %}
+            {% for c in (data.current_cols or []) %}
+              {% set idx = loop.index0 %}
+              <td>{{ (r.current_values[idx] if (r.current_values is defined and (r.current_values|length) > idx) else '') }}</td>
+            {% endfor %}
+          {% else %}
+            <td>{{ r.current }}</td>
+          {% endif %}
           <td>{{ r.cumulative_display }}</td>
           <td>
             {% set p = (r.progress or 0) * 100 %}

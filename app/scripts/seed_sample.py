@@ -124,15 +124,15 @@ def seed_sample(db: Session) -> None:
     pwd = settings.SAMPLE_SEED_PASSWORD or "123"
 
     # Orgs
-    org_ab = _get_or_create_org(db, "آبمن")
-    org_jh = _get_or_create_org(db, "جهاد")
+    org_ab = _get_or_create_org(db, "شرکت آب منطقه‌ای خراسان رضوی")
+    org_jh = _get_or_create_org(db, "سازمان جهاد کشاورزی خراسان رضوی")
 
     # Counties (units)
     c_ab_m = _get_or_create_county(db, "امور آب مشهد")
     c_ab_n = _get_or_create_county(db, "امور آب نیشابور")
 
-    c_jh_m = _get_or_create_county(db, "جهاد مشهد")
-    c_jh_n = _get_or_create_county(db, "جهاد نیشابور")
+    c_jh_m = _get_or_create_county(db, "جهاد کشاورزی مشهد")
+    c_jh_n = _get_or_create_county(db, "جهاد کشاورزی نیشابور")
 
     # Relationships: Org <-> County unit
     _get_or_create_unit(db, org_ab.id, c_ab_m.id)

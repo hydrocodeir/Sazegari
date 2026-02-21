@@ -234,11 +234,29 @@ def build_program_report(
     year_cols = sorted(years_with_data)
     current_label = period_label(year, pt, pn)
 
-    # Prepare current period rows for quick access
-    current_by_baseline: dict[int, list[ProgramPeriodRow]] = {}
+    # For the latest registered year, show all periods up to the selected one (ONLY within that year).
+    # This fixes cases like: selected = "سه ماه دوم" but "سه ماه اول" must still be included in totals.
+    if pt == "quarter":
+        current_period_nos = list(range(1, pn + 1))
+    elif pt == "half":
+        current_period_nos = list(range(1, pn + 1))
+    else:
+        current_period_nos = [1]
+
+    current_cols: list[dict] = []
+    for i in current_period_nos:
+        if pt == "year":
+            lbl = f"عملکرد سال {year}"
+        else:
+            lbl = period_label(year, pt, i)
+        current_cols.append({"period_no": int(i), "label": lbl})
+
+    # Prepare current-year period rows for quick access
+    current_by_baseline_period: dict[tuple[int, int], list[ProgramPeriodRow]] = {}
     for pr, y, r_pt, r_pn, _c_id in p_rows:
-        if int(y) == year and (r_pt or "").strip().lower() == pt and int(r_pn) == pn:
-            current_by_baseline.setdefault(int(pr.baseline_row_id), []).append(pr)
+        if int(y) == year and (r_pt or "").strip().lower() == pt and int(r_pn) in current_period_nos:
+            key = (int(pr.baseline_row_id), int(r_pn))
+            current_by_baseline_period.setdefault(key, []).append(pr)
 
     # Aggregate row data
     rows_out: list[dict] = []
@@ -267,11 +285,22 @@ def build_program_report(
                 annual[y] = ""
             annual_calc_sum += s
 
-        # current period result
-        curr_list = current_by_baseline.get(int(br.id), [])
-        curr_has_any = any(pr.result_value is not None for pr in curr_list)
-        curr_sum = sum(float(pr.result_value or 0.0) for pr in curr_list)
-        curr_display = fmt_num(curr_sum) if curr_has_any else ""
+        # current year period results (only for the latest year; show all periods up to the selected one)
+        period_values: list[str] = []
+        current_year_sum = 0.0
+        last_display = ""
+        for i in current_period_nos:
+            plist = current_by_baseline_period.get((int(br.id), int(i)), [])
+            has_any = any(pr.result_value is not None for pr in plist)
+            s = sum(float(pr.result_value or 0.0) for pr in plist)
+            current_year_sum += s
+            disp = fmt_num(s) if has_any else ""
+            period_values.append(disp)
+            if int(i) == pn:
+                last_display = disp
+
+        # Backward-compatible: keep a single 'current' value for templates/exports that still expect it.
+        curr_display = last_display
 
         # actions aggregation
         action_items: list[str] = []
@@ -288,7 +317,7 @@ def build_program_report(
             action_items.append(f"{prefix}: {txt}")
         actions_agg = "<br>".join(html.escape(x) for x in action_items)
 
-        cumulative = annual_calc_sum + curr_sum
+        cumulative = annual_calc_sum + current_year_sum
         target = float(br.target_value or 0.0)
         progress = (cumulative / target) if target > 0 else 0.0
 
@@ -303,6 +332,7 @@ def build_program_report(
                 "target_value_display": fmt_num(float(br.target_value or 0.0)),
                 "annual": annual,
                 "current": curr_display,
+                "current_values": period_values,
                 "actions": actions_agg,
                 "cumulative": cumulative,
                 "cumulative_display": fmt_num(cumulative),
@@ -327,6 +357,7 @@ def build_program_report(
         "period_type": pt,
         "period_no": pn,
         "current_label": current_label,
+        "current_cols": current_cols,
         "current_perf_label": current_perf_label,
         "target_header": target_header,
         # for templates
