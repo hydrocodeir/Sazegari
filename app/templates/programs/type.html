@@ -19,8 +19,16 @@
         <label class="form-label">عنوان</label>
         <input class="form-control" name="title" value="{{ t.title }}" required />
       </div>
-      <div class="col-12 col-lg-4 text-end">
+      <div class="col-12 col-lg-4 text-end d-flex gap-2 justify-content-end flex-wrap">
         <button class="btn btn-primary" type="submit"><i class="bi bi-save"></i> ذخیره</button>
+
+        <form method="post" action="/programs/{{ t.id }}/baseline/delete" class="d-inline" onsubmit="return confirm('حذف برنامه پایش (فرم اولیه)؟\n(اگر فرم دوره‌ای ثبت شده باشد، حذف ممکن نیست.)')">
+          <button class="btn btn-outline-warning" type="submit"><i class="bi bi-trash"></i> حذف برنامه پایش</button>
+        </form>
+
+        <form method="post" action="/programs/{{ t.id }}/delete" class="d-inline" onsubmit="return confirm('حذف تیپ فرم؟\n(اگر فرم دوره‌ای ثبت شده باشد، حذف ممکن نیست.)')">
+          <button class="btn btn-outline-danger" type="submit"><i class="bi bi-x-circle"></i> حذف تیپ فرم</button>
+        </form>
       </div>
     </form>
     <div class="text-muted small mt-2">

@@ -10,6 +10,7 @@ from app.db.models.workflow_log import WorkflowLog
 from app.db.models.notification import Notification
 from app.db.models.report_attachment import ReportAttachment
 from app.db.models.report_audit_log import ReportAuditLog
+from app.db.models.form_audit_log import FormAuditLog
 from app.db.models.user import User
 from app.db.models.program_form_type import ProgramFormType
 from app.db.models.program_baseline import ProgramBaseline, ProgramBaselineRow

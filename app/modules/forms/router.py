@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.auth.deps import get_current_user
 from app.utils.badges import get_badge_count
+from app.utils.form_audit import add_form_audit_log
 from app.db.models.form_template import FormTemplate
 from app.db.models.org import Org
 from app.db.models.county import County
@@ -91,6 +92,20 @@ def create(
 
     f = FormTemplate(org_id=org_id, county_id=cid, scope=scope, title=title.strip(), schema_json=schema_text)
     db.add(f)
+    db.flush()
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="create",
+        entity="form_template",
+        entity_id=f.id,
+        org_id=f.org_id,
+        county_id=f.county_id,
+        before=None,
+        after={"title": f.title, "scope": f.scope, "county_id": f.county_id, "schema_json": f.schema_json},
+    )
+
     db.commit()
     db.refresh(f)
 
@@ -187,11 +202,25 @@ def edit_save(
             status_code=400,
         )
 
+    before = {"title": f.title, "scope": f.scope, "county_id": f.county_id, "schema_json": f.schema_json, "org_id": f.org_id}
+
     f.org_id = org_id
     f.county_id = cid
     f.scope = scope
     f.title = title.strip()
     f.schema_json = schema_text
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="update",
+        entity="form_template",
+        entity_id=f.id,
+        org_id=f.org_id,
+        county_id=f.county_id,
+        before=before,
+        after={"title": f.title, "scope": f.scope, "county_id": f.county_id, "schema_json": f.schema_json, "org_id": f.org_id},
+    )
+
     db.commit()
 
     return RedirectResponse("/forms", status_code=303)
@@ -214,6 +243,20 @@ def delete(request: Request, form_id: int, db: Session = Depends(get_db), user=D
 
     if f.scope == "province":
         require(user.role == Role.SECRETARIAT_ADMIN, "حذف فرم استانی فقط توسط مدیر دبیرخانه امکان‌پذیر است.", 403)
+
+    before = {"title": f.title, "scope": f.scope, "county_id": f.county_id, "schema_json": f.schema_json, "org_id": f.org_id}
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="delete",
+        entity="form_template",
+        entity_id=f.id,
+        org_id=f.org_id,
+        county_id=f.county_id,
+        before=before,
+        after=None,
+    )
 
     db.delete(f)
     db.commit()

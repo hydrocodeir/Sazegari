@@ -10,12 +10,14 @@ from app.auth.deps import get_current_user
 from app.core.rbac import require
 from app.db.models.user import Role
 from app.utils.badges import get_badge_count
+from app.utils.form_audit import add_form_audit_log
 
 from app.db.models.program_form_type import ProgramFormType
 from app.db.models.program_baseline import ProgramBaseline, ProgramBaselineRow
 from app.db.models.org import Org
 from app.db.models.county import County
 from app.db.models.program_period import ProgramPeriodForm, ProgramPeriodRow
+from app.db.models.program_period_year_mode import ProgramPeriodYearMode
 
 
 router = APIRouter(prefix="/programs", tags=["programs"])
@@ -139,6 +141,20 @@ def create_type(
     # مقدمه/نتیجه‌گیری در گزارش‌ها تنظیم می‌شود (نه در تیپ فرم).
     t = ProgramFormType(org_id=int(o.id), title=title, intro_text="", conclusion_text="")
     db.add(t)
+    db.flush()
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="create",
+        entity="program_form_type",
+        entity_id=t.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=None,
+        after={"title": t.title, "org_id": t.org_id},
+    )
+
     db.commit()
     return RedirectResponse(url=f"/programs?org_id={int(o.id)}", status_code=303)
 
@@ -212,11 +228,182 @@ def edit_type(
 
     title = (title or "").strip()
     require(bool(title), "عنوان تیپ فرم الزامی است.", 400)
+    before = {"title": t.title, "org_id": t.org_id}
     t.title = title
     db.add(t)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="update",
+        entity="program_form_type",
+        entity_id=t.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=before,
+        after={"title": t.title, "org_id": t.org_id},
+    )
+
     db.commit()
     return RedirectResponse(url=f"/programs/{t.id}", status_code=303)
 
+
+
+@router.post("/{type_id}/delete", response_class=RedirectResponse)
+def delete_type(
+    type_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete a program form type (تیپ فرم) for an org.
+
+    Safety:
+      - If there is any period data for this type, deletion is blocked.
+      - Baseline (program monitoring initial form) will be deleted as well.
+    """
+    _require_secretariat_admin(user)
+
+    t = db.get(ProgramFormType, int(type_id))
+    require(t is not None, "تیپ فرم یافت نشد.", 404)
+
+    # Block if any period data exists
+    has_period = (
+        db.query(ProgramPeriodForm)
+        .filter(ProgramPeriodForm.org_id == t.org_id, ProgramPeriodForm.form_type_id == t.id)
+        .first()
+        is not None
+    )
+    require(not has_period, "برای حذف تیپ فرم، ابتدا باید فرم‌های دوره‌ای مربوطه حذف شوند.", 400)
+
+    # Baseline snapshot (if any)
+    baseline = (
+        db.query(ProgramBaseline)
+        .filter(ProgramBaseline.org_id == t.org_id, ProgramBaseline.form_type_id == t.id)
+        .first()
+    )
+    baseline_snapshot = None
+    if baseline is not None:
+        rows = (
+            db.query(ProgramBaselineRow)
+            .filter(ProgramBaselineRow.baseline_id == baseline.id)
+            .order_by(ProgramBaselineRow.row_no.asc(), ProgramBaselineRow.id.asc())
+            .all()
+        )
+        baseline_snapshot = {
+            "baseline_id": baseline.id,
+            "rows": [
+                {
+                    "id": r.id,
+                    "row_no": r.row_no,
+                    "title": r.title,
+                    "unit": r.unit,
+                    "start_year": r.start_year,
+                    "end_year": r.end_year,
+                    "target_value": r.target_value,
+                    "notes": r.notes,
+                }
+                for r in rows
+            ],
+        }
+        db.delete(baseline)
+
+    # Clean up any leftover locks
+    db.query(ProgramPeriodYearMode).filter(
+        ProgramPeriodYearMode.org_id == t.org_id,
+        ProgramPeriodYearMode.form_type_id == t.id,
+    ).delete(synchronize_session=False)
+
+    before = {"title": t.title, "org_id": t.org_id, "baseline": baseline_snapshot}
+    db.delete(t)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="delete",
+        entity="program_form_type",
+        entity_id=t.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=before,
+        after=None,
+        comment="حذف تیپ فرم",
+    )
+
+    db.commit()
+    return RedirectResponse(url=f"/programs?org_id={int(t.org_id)}", status_code=303)
+
+
+@router.post("/{type_id}/baseline/delete", response_class=RedirectResponse)
+def delete_baseline(
+    type_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete program monitoring baseline for a given type (برنامه پایش)."""
+    _require_secretariat_admin(user)
+
+    t = db.get(ProgramFormType, int(type_id))
+    require(t is not None, "تیپ فرم یافت نشد.", 404)
+
+    has_period = (
+        db.query(ProgramPeriodForm)
+        .filter(ProgramPeriodForm.org_id == t.org_id, ProgramPeriodForm.form_type_id == t.id)
+        .first()
+        is not None
+    )
+    require(not has_period, "برای حذف برنامه پایش، ابتدا باید فرم‌های دوره‌ای مربوطه حذف شوند.", 400)
+
+    baseline = (
+        db.query(ProgramBaseline)
+        .filter(ProgramBaseline.org_id == t.org_id, ProgramBaseline.form_type_id == t.id)
+        .first()
+    )
+    require(baseline is not None, "برنامه پایش یافت نشد.", 404)
+
+    rows = (
+        db.query(ProgramBaselineRow)
+        .filter(ProgramBaselineRow.baseline_id == baseline.id)
+        .order_by(ProgramBaselineRow.row_no.asc(), ProgramBaselineRow.id.asc())
+        .all()
+    )
+    before = {
+        "baseline_id": baseline.id,
+        "org_id": baseline.org_id,
+        "form_type_id": baseline.form_type_id,
+        "rows": [
+            {
+                "id": r.id,
+                "row_no": r.row_no,
+                "title": r.title,
+                "unit": r.unit,
+                "start_year": r.start_year,
+                "end_year": r.end_year,
+                "target_value": r.target_value,
+                "notes": r.notes,
+            }
+            for r in rows
+        ],
+    }
+
+    db.delete(baseline)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="delete",
+        entity="program_baseline",
+        entity_id=baseline.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=before,
+        after=None,
+        comment="حذف برنامه پایش (فرم اولیه)",
+    )
+
+    db.commit()
+    return RedirectResponse(url=f"/programs/{t.id}", status_code=303)
 
 # ----------------------------
 # Baseline CRUD
@@ -236,6 +423,21 @@ def baseline_page(type_id: int, request: Request, db: Session = Depends(get_db),
     if baseline is None:
         baseline = ProgramBaseline(org_id=t.org_id, form_type_id=t.id, created_by_id=user.id)
         db.add(baseline)
+        db.flush()
+
+        add_form_audit_log(
+            db,
+            actor_id=user.id,
+            action="create",
+            entity="program_baseline",
+            entity_id=baseline.id,
+            org_id=baseline.org_id,
+            county_id=None,
+            before=None,
+            after={"org_id": baseline.org_id, "form_type_id": baseline.form_type_id},
+            comment="ایجاد فرم اولیه برنامه پایش",
+        )
+
         db.commit()
         db.refresh(baseline)
 
@@ -298,6 +500,29 @@ def baseline_add_row(
         notes=(notes or "").strip(),
     )
     db.add(r)
+    db.flush()
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="create",
+        entity="program_baseline_row",
+        entity_id=r.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=None,
+        after={
+            "baseline_id": r.baseline_id,
+            "row_no": r.row_no,
+            "title": r.title,
+            "unit": r.unit,
+            "start_year": r.start_year,
+            "end_year": r.end_year,
+            "target_value": r.target_value,
+            "notes": r.notes,
+        },
+    )
+
     db.commit()
     return RedirectResponse(url=f"/programs/{t.id}/baseline", status_code=303)
 
@@ -330,6 +555,17 @@ def baseline_update_row(
     tv = _safe_float(target_value)
     require(tv is not None, "هدف باید عدد باشد.", 400)
 
+    before = {
+        "baseline_id": r.baseline_id,
+        "row_no": r.row_no,
+        "title": r.title,
+        "unit": r.unit,
+        "start_year": r.start_year,
+        "end_year": r.end_year,
+        "target_value": r.target_value,
+        "notes": r.notes,
+    }
+
     r.row_no = row_no
     r.title = (title or "").strip()
     r.unit = (unit or "").strip()
@@ -338,6 +574,28 @@ def baseline_update_row(
     r.target_value = tv
     r.notes = (notes or "").strip()
     db.add(r)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="update",
+        entity="program_baseline_row",
+        entity_id=r.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=before,
+        after={
+            "baseline_id": r.baseline_id,
+            "row_no": r.row_no,
+            "title": r.title,
+            "unit": r.unit,
+            "start_year": r.start_year,
+            "end_year": r.end_year,
+            "target_value": r.target_value,
+            "notes": r.notes,
+        },
+    )
+
     db.commit()
     return RedirectResponse(url=f"/programs/{t.id}/baseline", status_code=303)
 
@@ -363,6 +621,29 @@ def baseline_delete_row(
     # Prevent deleting baseline rows that already have period data
     has_p = db.query(ProgramPeriodRow).filter(ProgramPeriodRow.baseline_row_id == r.id).first() is not None
     require(not has_p, "این ردیف در فرم‌های دوره‌ای استفاده شده و قابل حذف نیست.", 400)
+
+    before = {
+        "baseline_id": r.baseline_id,
+        "row_no": r.row_no,
+        "title": r.title,
+        "unit": r.unit,
+        "start_year": r.start_year,
+        "end_year": r.end_year,
+        "target_value": r.target_value,
+        "notes": r.notes,
+    }
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="delete",
+        entity="program_baseline_row",
+        entity_id=r.id,
+        org_id=t.org_id,
+        county_id=None,
+        before=before,
+        after=None,
+    )
 
     db.delete(r)
     db.commit()

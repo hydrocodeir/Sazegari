@@ -24,6 +24,7 @@ from app.db.models.program_period import ProgramPeriodForm, ProgramPeriodRow
 from app.db.models.program_period_year_mode import ProgramPeriodYearMode
 from app.utils.schema import parse_schema, validate_payload, build_layout_blueprint
 from app.utils.badges import get_badge_count
+from app.utils.form_audit import add_form_audit_log
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
@@ -81,6 +82,45 @@ def _period_label(year: int, period_type: str, period_no: int) -> str:
     if pt == "year":
         return f"سالانه سال {year}"
     return f"بازه {period_no} سال {year}"
+
+
+def _snapshot_submission(s: Submission) -> dict:
+    try:
+        payload = json.loads(s.payload_json or "{}")
+    except Exception:
+        payload = s.payload_json or ""
+    return {
+        "id": s.id,
+        "form_id": s.form_id,
+        "org_id": s.org_id,
+        "county_id": s.county_id,
+        "org_county_unit_id": s.org_county_unit_id,
+        "created_by_id": s.created_by_id,
+        "payload": payload,
+    }
+
+
+def _snapshot_program_period_form(db: Session, pf: ProgramPeriodForm) -> dict:
+    rows = (
+        db.query(ProgramPeriodRow)
+        .filter(ProgramPeriodRow.period_form_id == pf.id)
+        .order_by(ProgramPeriodRow.baseline_row_id.asc(), ProgramPeriodRow.id.asc())
+        .all()
+    )
+    return {
+        "id": pf.id,
+        "org_id": pf.org_id,
+        "county_id": pf.county_id,
+        "form_type_id": pf.form_type_id,
+        "year": pf.year,
+        "period_type": pf.period_type,
+        "period_no": pf.period_no,
+        "created_by_id": pf.created_by_id,
+        "rows": [
+            {"baseline_row_id": r.baseline_row_id, "result_value": r.result_value, "actions_text": r.actions_text}
+            for r in rows
+        ],
+    }
 
 
 
@@ -452,6 +492,20 @@ async def create(
         payload_json=json.dumps(payload, ensure_ascii=False),
     )
     db.add(s)
+    db.flush()
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="create",
+        entity="submission",
+        entity_id=s.id,
+        org_id=s.org_id,
+        county_id=s.county_id,
+        before=None,
+        after=_snapshot_submission(s),
+    )
+
     db.commit()
     db.refresh(s)
 
@@ -607,6 +661,21 @@ def program_entry_page(
             created_by_id=user.id,
         )
         db.add(pf)
+        db.flush()
+
+        add_form_audit_log(
+            db,
+            actor_id=user.id,
+            action="create",
+            entity="program_period_form",
+            entity_id=pf.id,
+            org_id=pf.org_id,
+            county_id=pf.county_id,
+            before=None,
+            after=_snapshot_program_period_form(db, pf),
+            comment="ایجاد فرم دوره‌ای پایش برنامه",
+        )
+
         db.commit()
         db.refresh(pf)
 
@@ -725,6 +794,9 @@ def program_entry_save(
     )
     require(pf is not None, "فرم دوره‌ای یافت نشد.", 404)
 
+    # Snapshot before changes for audit log
+    before = _snapshot_program_period_form(db, pf)
+
     # Update rows
     for i, br_id in enumerate(row_id):
         rv = _safe_float(result_value[i] if i < len(result_value) else None)
@@ -750,6 +822,22 @@ def program_entry_save(
             period_type=pt,
         )
         db.add(ym)
+
+    db.flush()
+    after = _snapshot_program_period_form(db, pf)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="update",
+        entity="program_period_form",
+        entity_id=pf.id,
+        org_id=pf.org_id,
+        county_id=pf.county_id,
+        before=before,
+        after=after,
+        comment="ویرایش/ثبت داده فرم دوره‌ای پایش برنامه",
+    )
 
     db.commit()
     return RedirectResponse(
@@ -778,6 +866,8 @@ def program_period_delete(
     form_type_id = pf.form_type_id
     year = pf.year
 
+    before = _snapshot_program_period_form(db, pf)
+
     db.delete(pf)
     db.flush()
 
@@ -805,6 +895,19 @@ def program_period_delete(
         )
         if ym is not None:
             db.delete(ym)
+
+    add_form_audit_log(
+        db,
+        actor_id=user.id,
+        action="delete",
+        entity="program_period_form",
+        entity_id=pf.id,
+        org_id=pf.org_id,
+        county_id=pf.county_id,
+        before=before,
+        after=None,
+        comment="حذف فرم دوره‌ای پایش برنامه",
+    )
 
     db.commit()
 

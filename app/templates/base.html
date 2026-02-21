@@ -101,6 +101,12 @@
           <i class="bi bi-card-checklist"></i><span>فرم‌ها</span>
         </a>
         {% endif %}
+        {% if user %}
+        <a class="sidebar-link {% if request.url.path.startswith('/audit') %}active{% endif %}" href="/audit">
+          <i class="bi bi-journal-text"></i><span>لاگ فرم‌ها</span>
+        </a>
+        {% endif %}
+
         {% if user and can_manage_masterdata(user) %}
 
         <a class="sidebar-link {% if request.url.path.startswith('/policy') %}active{% endif %}" href="/policy">
