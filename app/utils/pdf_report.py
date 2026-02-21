@@ -790,7 +790,8 @@ def build_report_pdf(
 
     # 1) Intro
     story.append(Paragraph(rtl("۱) متن ابتدایی"), h2))
-    intro_html = doc.get("intro_html") or ""
+    # Robustness: accept legacy/alias keys in case older clients stored different field names.
+    intro_html = (doc.get("intro_html") or doc.get("note_html") or doc.get("intro") or "")
     intro_flow = html_to_flowables(intro_html, base, font_name, font_bold, max_width_cm=portrait_usable_w_cm)
     if intro_flow:
         story.extend(intro_flow)
@@ -995,7 +996,7 @@ def build_report_pdf(
     story.append(NextPageTemplate("portrait"))
     story.append(PageBreak())
     story.append(Paragraph(rtl("۳) نتیجه‌گیری و نتایج"), h2))
-    concl_html = doc.get("conclusion_html") or ""
+    concl_html = (doc.get("conclusion_html") or doc.get("result_html") or doc.get("conclusion") or "")
     concl_flow = html_to_flowables(concl_html, base, font_name, font_bold, max_width_cm=portrait_usable_w_cm)
     if concl_flow:
         story.extend(concl_flow)

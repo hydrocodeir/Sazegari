@@ -864,7 +864,9 @@ def delete_attachment(
 def update_note(
     request: Request,
     report_id: int,
+    # Front-end sends note_html (legacy name). Some clients may send intro_html.
     note_html: str = Form(""),
+    intro_html: str = Form(""),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -875,7 +877,8 @@ def update_note(
     before = load_doc(r.content_json)
     # store HTML in intro field
     doc = load_doc(r.content_json)
-    doc["intro_html"] = note_html or ""
+    payload = (note_html or "").strip() or (intro_html or "").strip()
+    doc["intro_html"] = payload
     r.content_json = dump_doc(doc)
     _audit(db, r.id, user.id, action="update", field="intro_html", before=before.get("intro_html"), after=doc.get("intro_html"))
     db.commit()
@@ -885,7 +888,10 @@ def update_note(
 def update_conclusion(
     request: Request,
     report_id: int,
+    # Front-end usually sends conclusion_html, but accept a few aliases for robustness.
     conclusion_html: str = Form(""),
+    note_html: str = Form(""),
+    result_html: str = Form(""),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -895,7 +901,8 @@ def update_conclusion(
     require(_can_edit(user, r), "در این وضعیت امکان ویرایش نتیجه‌گیری وجود ندارد.")
     before = load_doc(r.content_json)
     doc = load_doc(r.content_json)
-    doc["conclusion_html"] = conclusion_html or ""
+    payload = (conclusion_html or "").strip() or (note_html or "").strip() or (result_html or "").strip()
+    doc["conclusion_html"] = payload
     r.content_json = dump_doc(doc)
     _audit(db, r.id, user.id, action="update", field="conclusion_html", before=before.get("conclusion_html"), after=doc.get("conclusion_html"))
     db.commit()
