@@ -1,0 +1,148 @@
+﻿<div class="pdf-page">
+  <style>
+    .pdf-page {
+      direction: rtl;
+      color: #0f172a;
+      background: #ffffff;
+      width: 794px;
+      box-sizing: border-box;
+      padding: 14px 22px;
+      font-family: "Vazirmatn", Tahoma, Arial, sans-serif;
+      line-height: 1.75;
+      font-size: 12px;
+    }
+    .pdf-repeat-header {
+      margin-bottom: 10px;
+      border-bottom: 1px solid #dbe3ee;
+      padding-bottom: 8px;
+    }
+    .pdf-repeat-footer {
+      margin-top: 10px;
+      margin-bottom: 12px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 8px;
+      color: #64748b;
+      font-size: 11px;
+    }
+    .pdf-content {
+      min-height: 200px;
+    }
+    .pdf-header {
+      border: 1px solid #dbe3ee;
+      background: #f8fbff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .pdf-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0a2f5f;
+      margin: 0;
+    }
+    .pdf-subtitle {
+      font-size: 13px;
+      color: #334155;
+      margin-top: 5px;
+    }
+    .pdf-meta {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #475569;
+    }
+    .pdf-section {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      background: #ffffff;
+      margin-bottom: 10px;
+      overflow: hidden;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .pdf-section > h3 {
+      margin: 0;
+      padding: 8px 10px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      color: #0b5ed7;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .pdf-section > .pdf-body {
+      padding: 10px;
+    }
+    .pdf-subsection {
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .pdf-subsection h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      color: #1e293b;
+    }
+    .pdf-table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .pdf-table th,
+    .pdf-table td {
+      border: 1px solid #dbe3ee;
+      padding: 5px 6px;
+      text-align: right;
+      vertical-align: top;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .pdf-muted {
+      color: #64748b;
+    }
+  </style>
+
+  <div class="pdf-repeat-header" data-pdf-repeat-header>
+    {{page_header_html}}
+  </div>
+
+  <div class="pdf-content" data-pdf-content>
+    <div class="pdf-header">
+      <h1 class="pdf-title">{{title}}</h1>
+      <div class="pdf-subtitle">{{subtitle}}</div>
+      <div class="pdf-meta">
+        کد گزارش: {{report_id}} | نوع: {{kind_label}} | وضعیت: {{status_label}} | مسئول فعلی: {{owner_name}} | زمان تولید: {{generated_at}}
+      </div>
+    </div>
+
+    <section class="pdf-section">
+      <h3>مقدمه</h3>
+      <div class="pdf-body">{{intro_html}}</div>
+    </section>
+
+    <section class="pdf-section">
+      <h3>بخش‌های گزارش</h3>
+      <div class="pdf-body">
+        <div class="mb-2">{{sections_summary_html}}</div>
+        <div class="mb-2">{{sections_index_html}}</div>
+        <div>{{sections_tables_html}}</div>
+        <div>{{program_sections_html}}</div>
+      </div>
+    </section>
+
+    <section class="pdf-section">
+      <h3>نتیجه‌گیری</h3>
+      <div class="pdf-body">{{conclusion_html}}</div>
+    </section>
+
+    <section class="pdf-section">
+      <h3>پیوست‌ها</h3>
+      <div class="pdf-body">{{attachments_html}}</div>
+    </section>
+  </div>
+
+  <div class="pdf-repeat-footer" data-pdf-repeat-footer>
+    {{page_footer_html}}
+  </div>
+</div>

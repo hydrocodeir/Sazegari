@@ -44,6 +44,7 @@ from app.modules.notifications.router import router as notifications_router
 from app.modules.policy.router import router as policy_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.reports.router import router as reports_router
+from app.modules.report_template.router import router as report_template_router
 from app.modules.programs.router import router as programs_router
 from app.modules.audit.router import router as audit_router
 from app.modules.dashboard.router import router as dashboard_router
@@ -240,6 +241,7 @@ app.include_router(notifications_router)
 app.include_router(policy_router)
 app.include_router(submissions_router)
 app.include_router(reports_router)
+app.include_router(report_template_router)
 app.include_router(programs_router)
 app.include_router(audit_router)
 app.include_router(dashboard_router)

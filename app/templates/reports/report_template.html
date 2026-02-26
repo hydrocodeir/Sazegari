@@ -1,0 +1,198 @@
+﻿{% extends "base.html" %}
+{% block page_title %}قالب PDF گزارش{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="m-0">تنظیم قالب عمومی PDF گزارش</h5>
+          <div class="text-muted small mt-1">
+            این قالب در خروجی PDF سمت کاربر (jsPDF + html2canvas) استفاده می‌شود.
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="/reports">بازگشت به گزارش‌ها</a>
+          <form method="post" action="/report-template/reset" class="m-0" onsubmit="return confirm('قالب سفارشی حذف شود و قالب پیش‌فرض جایگزین شود؟')">
+            <button class="btn btn-outline-danger btn-sm" type="submit">بازگردانی قالب پیش‌فرض</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm p-3">
+      <form method="post" action="/report-template">
+        <label for="template_html" class="form-label fw-semibold">کد HTML قالب</label>
+        <textarea id="template_html" name="template_html" class="form-control font-monospace" rows="24" dir="ltr">{{ template_html }}</textarea>
+        <div class="form-text mt-2">
+          حتما یک ریشه با کلاس <code>pdf-page</code> داشته باشد تا رندر PDF درست انجام شود.
+          برای هدر/فوتر تکرارشونده از <code>data-pdf-repeat-header</code> و <code>data-pdf-repeat-footer</code> و برای بدنه قابل صفحه‌بندی از <code>data-pdf-content</code> استفاده کنید.
+          شماره صفحات را با <code>{{ "{{" }}page_number{{ "}}" }}</code> و <code>{{ "{{" }}page_count{{ "}}" }}</code> قرار دهید.
+        </div>
+        <div class="mt-3 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">ذخیره قالب</button>
+          <a class="btn btn-outline-secondary" href="/report-template">بازخوانی</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="card border-0 shadow-sm p-3">
+      <h6 class="m-0">متغیرهای قابل استفاده</h6>
+      <div class="text-muted small mt-1 mb-2">از این جای‌نگهدارها در قالب استفاده کنید.</div>
+      <ul class="list-group">
+        {% for p in placeholders %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <code>{{ "{{" }}{{ p }}{{ "}}" }}</code>
+            <button
+              class="btn btn-sm btn-outline-primary"
+              type="button"
+              onclick="navigator.clipboard && navigator.clipboard.writeText('{{ '{{' }}{{ p }}{{ '}}' }}')">
+              کپی
+            </button>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 shadow-sm p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+          <h6 class="m-0">پیش‌نمایش زنده قالب</h6>
+          <div class="text-muted small mt-1">با تغییر کد HTML، پیش‌نمایش به‌صورت خودکار به‌روزرسانی می‌شود.</div>
+        </div>
+        <button id="previewRefreshBtn" class="btn btn-sm btn-outline-primary" type="button">به‌روزرسانی پیش‌نمایش</button>
+      </div>
+      <iframe
+        id="template_preview_frame"
+        class="w-100 border rounded-3 bg-white"
+        style="height: 72vh;"
+        sandbox="allow-same-origin"
+        title="پیش‌نمایش زنده قالب گزارش"></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const templateTextarea = document.getElementById("template_html");
+  const previewFrame = document.getElementById("template_preview_frame");
+  const refreshBtn = document.getElementById("previewRefreshBtn");
+  if (!templateTextarea || !previewFrame) return;
+
+  const sampleData = {
+    title: "گزارش نمونه سازگاری با کم‌آبی",
+    subtitle: "نمونه پیش‌نمایش قالب PDF",
+    report_id: "123",
+    kind_label: "استانی",
+    status_label: "پیش‌نویس",
+    owner_name: "کارشناس استان",
+    generated_at: "",
+    page_header_html:
+      '<div style="display:flex;justify-content:space-between;align-items:center;"><strong>سازگاری با کم‌آبی</strong><span class="pdf-muted">گزارش نمونه</span></div>',
+    page_footer_html:
+      '<div style="display:flex;justify-content:space-between;align-items:center;"><span class="pdf-muted">نسخه آزمایشی</span><span>صفحه {{ "{{" }}page_number{{ "}}" }} از {{ "{{" }}page_count{{ "}}" }}</span></div>',
+    page_number: "1",
+    page_count: "1",
+    intro_html: "<p>این یک متن نمونه برای مقدمه گزارش است.</p>",
+    sections_summary_html:
+      '<table class="pdf-table"><thead><tr><th>فرم</th><th>تعداد ثبت</th></tr></thead><tbody><tr><td>فرم آب</td><td>۱</td></tr><tr><td>فرم انرژی</td><td>۱</td></tr></tbody></table>',
+    sections_index_html:
+      "<ol><li><strong>فرم آب</strong> <span class=\"pdf-muted\">(ثبت #45)</span></li><li><strong>فرم انرژی</strong> <span class=\"pdf-muted\">(ثبت #46)</span></li></ol>",
+    sections_html:
+      '<table class="pdf-table"><thead><tr><th>عنوان</th><th>مقدار</th></tr></thead><tbody><tr><td>شاخص ۱</td><td>۴۲</td></tr><tr><td>شاخص ۲</td><td>۷۵</td></tr></tbody></table>',
+    sections_tables_html:
+      '<section><h4>۱) فرم آب</h4><table class="pdf-table"><thead><tr><th>عنوان</th><th>مقدار</th></tr></thead><tbody><tr><td>مصرف</td><td>۴۲</td></tr></tbody></table></section>',
+    sections_cards_html:
+      '<section><h4>کارتی</h4><div><strong>مصرف</strong>: ۴۲</div><div><strong>راندمان</strong>: ۷۵%</div></section>',
+    program_sections_html:
+      '<section><h4>پایش برنامه - نمونه</h4><table class="pdf-table"><thead><tr><th>ردیف</th><th>عملکرد</th></tr></thead><tbody><tr><td>۱</td><td>۸۸</td></tr></tbody></table></section>',
+    sections_raw_json:
+      "<pre>[{\"submission_id\":45,\"form_title\":\"فرم آب\",\"field_count\":3}]</pre>",
+    conclusion_html: "<p>جمع‌بندی نهایی گزارش در این بخش نمایش داده می‌شود.</p>",
+    attachments_html: "<ul><li>پیوست شماره ۱</li><li>پیوست شماره ۲</li></ul>",
+  };
+
+  function applyTemplateData(template, data) {
+    let out = String(template || "");
+    Object.entries(data || {}).forEach(([key, value]) => {
+      const re = new RegExp("\\{\\{\\s*" + key + "\\s*\\}\\}", "g");
+      out = out.replace(re, String(value ?? ""));
+    });
+    return out;
+  }
+
+  const enToFaDigits = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+
+  function toPersianDigits(value) {
+    return String(value ?? "").replace(/[0-9]/g, function (d) {
+      return enToFaDigits[Number(d)] || d;
+    });
+  }
+
+  function localizeDigitsInHtml(html) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = String(html || "");
+    if (!document.createTreeWalker || !window.NodeFilter) return wrap.innerHTML;
+    const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, null);
+    let node = walker.nextNode();
+    while (node) {
+      const parentTag = node.parentElement ? node.parentElement.tagName : "";
+      if (parentTag !== "SCRIPT" && parentTag !== "STYLE" && parentTag !== "NOSCRIPT") {
+        node.nodeValue = toPersianDigits(node.nodeValue || "");
+      }
+      node = walker.nextNode();
+    }
+    return wrap.innerHTML;
+  }
+
+  function ensureRootPage(html) {
+    const s = String(html || "");
+    if (s.includes("pdf-page")) return s;
+    return '<div class="pdf-page">' + s + "</div>";
+  }
+
+  function currentFaDateTime() {
+    try {
+      return new Date().toLocaleString("fa-IR-u-ca-persian", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    } catch (e) {
+      return new Date().toISOString();
+    }
+  }
+
+  function renderPreview() {
+    const tpl = templateTextarea.value || "";
+    const data = { ...sampleData, generated_at: currentFaDateTime() };
+    const bodyHtml = localizeDigitsInHtml(ensureRootPage(applyTemplateData(tpl, data)));
+    const doc =
+      '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      "<style>body{margin:0;padding:14px;background:#f5f7fb;font-family:Vazirmatn,Tahoma,Arial,sans-serif;} .pdf-page{box-shadow:0 2px 14px rgba(2,6,23,.08);margin:auto;} table{border-collapse:collapse;} th,td{border:1px solid #dbe3ee;padding:6px 7px;text-align:right;}</style>" +
+      "</head><body>" +
+      bodyHtml +
+      "</body></html>";
+    previewFrame.srcdoc = doc;
+  }
+
+  let timer = null;
+  templateTextarea.addEventListener("input", function () {
+    clearTimeout(timer);
+    timer = setTimeout(renderPreview, 220);
+  });
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", renderPreview);
+  }
+
+  renderPreview();
+})();
+</script>
+{% endblock %}
