@@ -69,7 +69,7 @@ def upgrade() -> None:
             sa.Column("period_form_id", sa.Integer(), sa.ForeignKey("program_period_forms.id"), nullable=False),
             sa.Column("baseline_row_id", sa.Integer(), sa.ForeignKey("program_baseline_rows.id"), nullable=False),
             sa.Column("result_value", sa.Float(), nullable=True),
-            sa.Column("actions_text", sa.Text(), nullable=False, server_default=""),
+            sa.Column("actions_text", sa.Text(), nullable=False),
             sa.UniqueConstraint("period_form_id", "baseline_row_id", name="uq_program_period_row_unique"),
         )
         op.create_index("ix_program_period_rows_period_form_id", "program_period_rows", ["period_form_id"])
@@ -131,3 +131,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Intentionally no destructive downgrade
     pass
+

@@ -49,7 +49,16 @@
 
         <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
           <a class="btn btn-outline-secondary btn-sm" href="/reports"><i class="bi bi-arrow-right me-1"></i>بازگشت</a>
-          <a class="btn btn-outline-primary btn-sm" href="/reports/{{ report.id }}/pdf"><i class="bi bi-file-earmark-pdf me-1"></i>دانلود PDF</a>
+          <a
+            id="downloadPdfBtn"
+            class="btn btn-outline-primary btn-sm"
+            href="/reports/{{ report.id }}/pdf"
+            onclick="return handlePdfButtonClick(event);">
+            <i class="bi bi-file-earmark-pdf me-1"></i>دانلود PDF
+          </a>
+          {% if user.role.value == 'secretariat_admin' %}
+            <a class="btn btn-outline-secondary btn-sm" href="/report-template"><i class="bi bi-brush me-1"></i>قالب PDF</a>
+          {% endif %}
           {% if can_edit %}
             <button class="btn btn-primary btn-sm" type="button" onclick="saveAll()"><i class="bi bi-cloud-check me-1"></i>ذخیره همه</button>
           {% endif %}
@@ -305,6 +314,29 @@
       </div>
     </div>
 
+    <div class="modal fade" id="reportPdfModal" tabindex="-1" aria-labelledby="reportPdfModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="reportPdfModalLabel">پیش‌نمایش PDF گزارش</h5>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+              <button id="reportPdfModalDownloadBtn" type="button" class="btn btn-sm btn-primary" onclick="downloadModalPdf()">
+                <i class="bi bi-download me-1"></i>دانلود PDF
+              </button>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+          </div>
+          <div class="modal-body p-0">
+            <iframe
+              id="reportPdfModalFrame"
+              title="PDF Preview"
+              style="width:100%; height:74vh; border:0;"
+              loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card p-3 border-0 shadow-sm mt-3 hover-lift">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="m-0">لاگ تغییرات محتوا</h6>
@@ -366,6 +398,12 @@
 
 </div>
 
+<div
+  id="pdf-render-root"
+  aria-hidden="true"
+  style="position: fixed; inset-inline-start: -20000px; top: 0; width: 794px; opacity: 1; pointer-events: none; z-index: -1;">
+</div>
+
 <script
   src="{{ url_for('static', path='/js/ckeditor5-build-classic/ckeditor.js') }}"
   onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@44.3.0/build/ckeditor.js';">
@@ -376,6 +414,14 @@
 </script>
 <script src="{{ url_for('static', path='/js/gojs_3.1.5.js') }}"></script>
 <script src="{{ url_for('static', path='/js/Sortable.min.js') }}"></script>
+<script
+  src="{{ url_for('static', path='/js/html2canvas.min.js') }}"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';">
+</script>
+<script
+  src="{{ url_for('static', path='/js/jspdf.umd.min.js') }}"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';">
+</script>
 
 <script>
 let rteIntro = null;
@@ -390,6 +436,18 @@ let dirtyConclusion = false;
 let dirtyMeta = false;
 let autoSaveTimers = {intro: null, conclusion: null, meta: null};
 let workflowFlowDiagram = null;
+let reportPdfModal = null;
+let lastGeneratedPdf = null;
+let lastGeneratedPdfFilename = "report_{{ report.id }}.pdf";
+
+const reportPdfTemplateHtml = {{ (pdf_template_html or "") | tojson }};
+const reportPdfStaticData = {
+  report_id: "{{ report.id }}",
+  kind_label: {{ (report.kind_label or "") | tojson }},
+  status_label: {{ (report.status_label or "") | tojson }},
+  owner_name: {{ (owner_name or "-") | tojson }},
+};
+const reportDocForPdf = {{ (doc or {}) | tojson }};
 
 const workflowLogs = [
   {% for l in logs %}
@@ -407,6 +465,646 @@ const FLOW_COLORS = [
   "#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1",
   "#20c997", "#0dcaf0", "#6c757d", "#d63384", "#6610f2"
 ];
+
+function escapeHtml(value){
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+const EN_TO_FA_DIGITS = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+
+function toPersianDigits(value){
+  return String(value ?? "").replace(/[0-9]/g, (d) => EN_TO_FA_DIGITS[Number(d)] || d);
+}
+
+function localizeDigitsInTextNodes(root){
+  if(!root || !document.createTreeWalker || !window.NodeFilter) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let node = walker.nextNode();
+  while(node){
+    const parentTag = node.parentElement ? node.parentElement.tagName : "";
+    if(parentTag !== "SCRIPT" && parentTag !== "STYLE" && parentTag !== "NOSCRIPT"){
+      const raw = node.nodeValue || "";
+      const converted = toPersianDigits(raw);
+      if(converted !== raw){
+        node.nodeValue = converted;
+      }
+    }
+    node = walker.nextNode();
+  }
+}
+
+function cleanRichHtml(input){
+  const wrap = document.createElement("div");
+  wrap.innerHTML = String(input || "");
+  wrap.querySelectorAll("script, noscript").forEach(el => el.remove());
+  wrap.querySelectorAll("*").forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const n = attr.name.toLowerCase();
+      if(n.startsWith("on")) el.removeAttribute(attr.name);
+    });
+  });
+  return wrap.innerHTML;
+}
+
+function buildPdfHref(path){
+  const p = String(path || "");
+  if(!p) return "";
+  if(p.startsWith("http://") || p.startsWith("https://")) return p;
+  if(p.startsWith("/")) return p;
+  return "/" + p;
+}
+
+function normalizeFieldValueForPdf(value){
+  if(value === null || value === undefined) return "";
+  if(Array.isArray(value)){
+    return value.map(v => normalizeFieldValueForPdf(v)).filter(Boolean).join("، ");
+  }
+  if(typeof value === "object"){
+    if(value.path){
+      const href = buildPdfHref(value.path);
+      const name = escapeHtml(value.filename || value.name || "file");
+      return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${name}</a>`;
+    }
+    return `<code>${escapeHtml(JSON.stringify(value))}</code>`;
+  }
+  return escapeHtml(String(value));
+}
+
+function buildSectionsPayloadForPdf(){
+  const doc = reportDocForPdf || {};
+  const agg = (doc && typeof doc === "object") ? (doc.aggregation || {}) : {};
+  const formsMeta = (agg && typeof agg === "object") ? (agg.forms || {}) : {};
+  const subs = Array.isArray(agg.submissions) ? agg.submissions : [];
+  const sections = Array.isArray(doc.sections) ? doc.sections : [];
+  const subMap = new Map();
+  subs.forEach(s => {
+    const sid = Number(s && s.id);
+    if(Number.isFinite(sid)) subMap.set(sid, s);
+  });
+
+  const items = [];
+  sections.forEach((sec, idx) => {
+    const sid = Number(sec && sec.submission_id);
+    const sub = subMap.get(sid);
+    if(!sub) return;
+
+    const formIdKey = String(sub.form_id ?? "");
+    const fmeta = formsMeta[formIdKey] || {};
+    const payload = (sub && typeof sub.payload === "object" && sub.payload) ? sub.payload : {};
+    const layout = Array.isArray(fmeta.layout) ? fmeta.layout : [];
+    const labels = (fmeta && typeof fmeta.labels === "object" && fmeta.labels) ? fmeta.labels : {};
+    const fieldsMeta = (fmeta && typeof fmeta.fields === "object" && fmeta.fields) ? fmeta.fields : {};
+    const seen = new Set();
+    const rows = [];
+
+    if(layout.length > 0){
+      layout.forEach(row => {
+        const names = Array.isArray(row?.fields) ? row.fields : [];
+        names.forEach(name => {
+          const key = String(name || "");
+          if(!key || seen.has(key)) return;
+          seen.add(key);
+          const label = fieldsMeta[key]?.label || labels[key] || key;
+          rows.push({
+            key,
+            label: String(label || key),
+            value_html: normalizeFieldValueForPdf(payload[key]),
+          });
+        });
+      });
+    }
+
+    Object.keys(payload).forEach(key => {
+      if(seen.has(key)) return;
+      const label = fieldsMeta[key]?.label || labels[key] || key;
+      rows.push({
+        key,
+        label: String(label || key),
+        value_html: normalizeFieldValueForPdf(payload[key]),
+      });
+    });
+
+    items.push({
+      index: idx + 1,
+      submission_id: sid,
+      form_id: sub.form_id,
+      form_title: fmeta.title || sub.form_title || `Form ${sub.form_id ?? ""}`,
+      description_html: cleanRichHtml(sec?.description_html || ""),
+      rows,
+      field_count: rows.length,
+    });
+  });
+
+  const programSections = Array.isArray(doc.program_sections) ? doc.program_sections : [];
+  return { items, program_sections: programSections };
+}
+
+function renderSectionsIndexHtmlForPdf(payload){
+  const items = payload?.items || [];
+  if(items.length === 0) return '<div class="pdf-muted">بخشی ثبت نشده است.</div>';
+  const list = items.map(item =>
+    `<li><strong>${escapeHtml(item.form_title)}</strong> <span class="pdf-muted">(ثبت #${item.submission_id} - ${item.field_count} فیلد)</span></li>`
+  ).join("");
+  return `<div class="pdf-section-index"><ol>${list}</ol></div>`;
+}
+
+function renderSectionsSummaryHtmlForPdf(payload){
+  const items = payload?.items || [];
+  if(items.length === 0) return '<div class="pdf-muted">خلاصه‌ای برای بخش‌ها موجود نیست.</div>';
+  const byForm = new Map();
+  items.forEach(item => {
+    const key = String(item.form_title || "-");
+    byForm.set(key, (byForm.get(key) || 0) + 1);
+  });
+  const rows = Array.from(byForm.entries()).map(([title, count]) =>
+    `<tr><td>${escapeHtml(title)}</td><td>${count}</td></tr>`
+  ).join("");
+  return (
+    '<div class="pdf-section-summary">' +
+    `<table class="pdf-table"><thead><tr><th>فرم</th><th>تعداد ثبت</th></tr></thead><tbody>${rows}</tbody></table>` +
+    "</div>"
+  );
+}
+
+function renderSectionsTablesHtmlForPdf(payload){
+  const items = payload?.items || [];
+  if(items.length === 0) return '<div class="pdf-muted">جدولی برای نمایش وجود ندارد.</div>';
+  return items.map(item => {
+    const rowsHtml = item.rows.map(r =>
+      `<tr><td>${escapeHtml(r.label)}</td><td>${r.value_html || "-"}</td></tr>`
+    ).join("");
+    const desc = item.description_html
+      ? `<div class="pdf-section-desc">${item.description_html}</div>`
+      : "";
+    return (
+      '<section class="pdf-subsection">' +
+      `<h4>${item.index}) ${escapeHtml(item.form_title)} <span class="pdf-muted">(ثبت #${item.submission_id})</span></h4>` +
+      desc +
+      `<table class="pdf-table"><thead><tr><th style="width:36%">عنوان</th><th>مقدار</th></tr></thead><tbody>${rowsHtml}</tbody></table>` +
+      "</section>"
+    );
+  }).join("");
+}
+
+function renderSectionsCardsHtmlForPdf(payload){
+  const items = payload?.items || [];
+  if(items.length === 0) return '<div class="pdf-muted">داده‌ای برای کارت‌ها موجود نیست.</div>';
+  return items.map(item => {
+    const cards = item.rows.map(r =>
+      `<div class="pdf-kv-card"><div class="pdf-kv-label">${escapeHtml(r.label)}</div><div class="pdf-kv-value">${r.value_html || "-"}</div></div>`
+    ).join("");
+    return (
+      '<section class="pdf-subsection">' +
+      `<h4>${item.index}) ${escapeHtml(item.form_title)}</h4>` +
+      `<div class="pdf-kv-grid">${cards}</div>` +
+      "</section>"
+    );
+  }).join("");
+}
+
+function renderProgramSectionsHtmlForPdf(payload){
+  const items = Array.isArray(payload?.program_sections) ? payload.program_sections : [];
+  if(items.length === 0) return "";
+  return items.map((s, idx) => {
+    const title = escapeHtml(s?.title || `پایش برنامه ${idx + 1}`);
+    const desc = s?.description_html ? cleanRichHtml(s.description_html) : "";
+    const table = s?.table_html ? cleanRichHtml(s.table_html) : "";
+    return (
+      '<section class="pdf-subsection">' +
+      `<h4>${title}</h4>` +
+      (desc ? `<div class="pdf-section-desc">${desc}</div>` : "") +
+      (table || '<div class="pdf-muted">جدولی ثبت نشده است.</div>') +
+      "</section>"
+    );
+  }).join("");
+}
+
+function collectSectionsDataForPdf(){
+  const payload = buildSectionsPayloadForPdf();
+  const sections_index_html = renderSectionsIndexHtmlForPdf(payload);
+  const sections_summary_html = renderSectionsSummaryHtmlForPdf(payload);
+  const sections_tables_html = renderSectionsTablesHtmlForPdf(payload);
+  const sections_cards_html = renderSectionsCardsHtmlForPdf(payload);
+  const program_sections_html = renderProgramSectionsHtmlForPdf(payload);
+  const sections_raw_json = escapeHtml(JSON.stringify(payload?.items || [], null, 2));
+  const sections_html = [
+    sections_summary_html,
+    sections_index_html,
+    sections_tables_html,
+    program_sections_html,
+  ].filter(Boolean).join("");
+
+  return {
+    sections_html,
+    sections_index_html,
+    sections_summary_html,
+    sections_tables_html,
+    sections_cards_html,
+    program_sections_html,
+    sections_raw_json: `<pre>${sections_raw_json}</pre>`,
+  };
+}
+
+function collectAttachmentsHtmlForPdf(){
+  const src = document.getElementById("fileAttachmentsBox");
+  if(!src) return '<div class="pdf-muted">پیوستی ثبت نشده است.</div>';
+  const clone = src.cloneNode(true);
+  clone.querySelectorAll("button, form, .btn").forEach(el => el.remove());
+  clone.querySelectorAll("[onclick], [hx-get], [hx-post], [hx-target], [hx-swap], [hx-trigger]").forEach(el => {
+    el.removeAttribute("onclick");
+    el.removeAttribute("hx-get");
+    el.removeAttribute("hx-post");
+    el.removeAttribute("hx-target");
+    el.removeAttribute("hx-swap");
+    el.removeAttribute("hx-trigger");
+  });
+  return cleanRichHtml(clone.innerHTML);
+}
+
+function formatPdfDateTime(){
+  try{
+    const now = new Date();
+    return now.toLocaleString("fa-IR-u-ca-persian", { dateStyle: "medium", timeStyle: "short" });
+  }catch(e){
+    return new Date().toISOString();
+  }
+}
+
+function buildReportData(){
+  const fallbackTitle = {{ (doc.meta.title or ("گزارش #" ~ report.id)) | tojson }};
+  const fallbackSubtitle = {{ (doc.meta.subtitle or "") | tojson }};
+  const fallbackIntro = {{ (doc.intro_html or "") | tojson }};
+  const fallbackConclusion = {{ (doc.conclusion_html or "") | tojson }};
+  const title = (document.getElementById("metaTitle")?.value || fallbackTitle || "").trim();
+  const subtitle = (document.getElementById("metaSubtitle")?.value || fallbackSubtitle || "").trim();
+  const finalTitle = escapeHtml(title || fallbackTitle || `گزارش #${reportPdfStaticData.report_id}`);
+  const finalSubtitle = escapeHtml(subtitle || "");
+  const defaultHeaderHtml =
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">` +
+    `<strong>${finalTitle}</strong>` +
+    `<span class="pdf-muted">${finalSubtitle || reportPdfStaticData.kind_label}</span>` +
+    `</div>`;
+  const defaultFooterHtml =
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">` +
+    `<span class="pdf-muted">کد گزارش: ${escapeHtml(reportPdfStaticData.report_id)}</span>` +
+    `<span>صفحه {{ "{{" }}page_number{{ "}}" }} از {{ "{{" }}page_count{{ "}}" }}</span>` +
+    `</div>`;
+  const introHtml = cleanRichHtml(getEditorHtml("intro") || fallbackIntro);
+  const conclusionHtml = cleanRichHtml(getEditorHtml("conclusion") || fallbackConclusion);
+  const sectionsData = collectSectionsDataForPdf();
+  return {
+    ...reportPdfStaticData,
+    title: finalTitle,
+    subtitle: finalSubtitle,
+    page_header_html: defaultHeaderHtml,
+    page_footer_html: defaultFooterHtml,
+    intro_html: introHtml || '<div class="pdf-muted">متنی ثبت نشده است.</div>',
+    ...sectionsData,
+    conclusion_html: conclusionHtml || '<div class="pdf-muted">متنی ثبت نشده است.</div>',
+    attachments_html: collectAttachmentsHtmlForPdf(),
+    generated_at: escapeHtml(formatPdfDateTime()),
+  };
+}
+
+function applyTemplateData(template, data){
+  let output = String(template || "");
+  Object.entries(data || {}).forEach(([k, v]) => {
+    const re = new RegExp(`\\{\\{\\s*${k}\\s*\\}\\}`, "g");
+    output = output.replace(re, String(v ?? ""));
+  });
+  return output;
+}
+
+function buildPdfTemplateHtml(reportData) {
+  const fallbackTemplate =
+    '<div class="pdf-page">' +
+    '<div class="pdf-repeat-header" data-pdf-repeat-header>{{page_header_html}}</div>' +
+    '<div class="pdf-content" data-pdf-content>' +
+    "<h2>{{title}}</h2>" +
+    "<div>{{subtitle}}</div>" +
+    "<hr />" +
+    "<div>{{intro_html}}</div>" +
+    "<hr />" +
+    "<div>{{sections_html}}</div>" +
+    "<hr />" +
+    "<div>{{conclusion_html}}</div>" +
+    "<hr />" +
+    "<div>{{attachments_html}}</div>" +
+    "</div>" +
+    '<div class="pdf-repeat-footer" data-pdf-repeat-footer>{{page_footer_html}}</div>' +
+    "</div>";
+
+  const raw = applyTemplateData(reportPdfTemplateHtml || fallbackTemplate, reportData);
+  if(!raw.includes("pdf-page")){
+    return `<div class="pdf-page">${raw}</div>`;
+  }
+  return raw;
+}
+
+function replacePageTokens(html, pageNumber, pageCount){
+  const localizedPageNumber = toPersianDigits(pageNumber);
+  const localizedPageCount = toPersianDigits(pageCount);
+  return String(html || "")
+    .replace(/\{\{\s*page_number\s*\}\}/g, String(localizedPageNumber))
+    .replace(/\{\{\s*page_count\s*\}\}/g, String(localizedPageCount));
+}
+
+function getRowColumnCount(row){
+  if(!row || !row.cells) return 0;
+  let count = 0;
+  Array.from(row.cells).forEach((cell) => {
+    count += Math.max(1, Number(cell.colSpan || 1));
+  });
+  return count;
+}
+
+function getTableColumnCount(table){
+  if(!table) return 0;
+  let maxCols = 0;
+  if(table.tHead && table.tHead.rows && table.tHead.rows.length){
+    maxCols = Math.max(maxCols, getRowColumnCount(table.tHead.rows[0]));
+  }
+  Array.from(table.rows || []).forEach((row) => {
+    maxCols = Math.max(maxCols, getRowColumnCount(row));
+  });
+  return maxCols;
+}
+
+function applyPdfTableAutoFit(root){
+  if(!root) return;
+  const tables = Array.from(root.querySelectorAll("table"));
+  tables.forEach((table) => {
+    const colCount = getTableColumnCount(table);
+    let fontSizePx = 11;
+    let cellPadding = "5px 6px";
+    if(colCount >= 8){
+      fontSizePx = 10;
+      cellPadding = "4px 5px";
+    }
+    if(colCount >= 11){
+      fontSizePx = 9;
+      cellPadding = "3px 4px";
+    }
+    if(colCount >= 14){
+      fontSizePx = 8;
+      cellPadding = "2px 3px";
+    }
+
+    table.style.width = "100%";
+    table.style.maxWidth = "100%";
+    table.style.tableLayout = "fixed";
+    table.style.borderCollapse = "collapse";
+    table.style.fontSize = `${fontSizePx}px`;
+
+    Array.from(table.querySelectorAll("th, td")).forEach((cell) => {
+      cell.style.whiteSpace = "normal";
+      cell.style.wordBreak = "break-word";
+      cell.style.overflowWrap = "anywhere";
+      cell.style.padding = cellPadding;
+      cell.style.verticalAlign = "top";
+    });
+  });
+}
+
+function getOuterHeightPx(el){
+  if(!el) return 0;
+  const rect = el.getBoundingClientRect();
+  const st = window.getComputedStyle(el);
+  const mt = parseFloat(st.marginTop || "0") || 0;
+  const mb = parseFloat(st.marginBottom || "0") || 0;
+  return Math.ceil(rect.height + mt + mb);
+}
+
+function getContentBlocksForPagination(contentEl){
+  if(!contentEl) return [];
+  const blocks = Array.from(contentEl.children || []);
+  if(blocks.length > 0) return blocks;
+  const text = (contentEl.textContent || "").trim();
+  if(!text) return [];
+  const fallback = document.createElement("div");
+  fallback.innerHTML = contentEl.innerHTML;
+  return [fallback];
+}
+
+function normalizeOversizedBlocks(blocks, maxHeightPx){
+  let out = [...blocks];
+  let changed = true;
+  let safety = 0;
+  while(changed && safety < 4){
+    changed = false;
+    safety += 1;
+    const next = [];
+    out.forEach((b) => {
+      const h = getOuterHeightPx(b);
+      if(h <= maxHeightPx * 1.05){
+        next.push(b);
+        return;
+      }
+      const kids = Array.from(b.children || []);
+      if(kids.length > 1){
+        kids.forEach(k => next.push(k));
+        changed = true;
+      }else{
+        next.push(b);
+      }
+    });
+    out = next;
+  }
+  return out;
+}
+
+function splitBlocksToPages(blocks, maxHeightPx){
+  if(!blocks.length) return [[]];
+  const pages = [];
+  let current = [];
+  let used = 0;
+  blocks.forEach((block) => {
+    const h = Math.max(1, getOuterHeightPx(block));
+    if(current.length === 0){
+      current.push(block);
+      used = h;
+      return;
+    }
+    if((used + h) <= maxHeightPx){
+      current.push(block);
+      used += h;
+    }else{
+      pages.push(current);
+      current = [block];
+      used = h;
+    }
+  });
+  if(current.length) pages.push(current);
+  return pages.length ? pages : [[]];
+}
+
+async function buildPdfFromTemplate() {
+  var renderRoot = document.getElementById("pdf-render-root");
+  if (!renderRoot || !window.html2canvas || !window.jspdf) {
+    return null;
+  }
+  var reportData = buildReportData();
+  var baseTemplate = buildPdfTemplateHtml(reportData);
+  renderRoot.innerHTML = baseTemplate;
+  var sourcePage = renderRoot.querySelector(".pdf-page");
+  if(!sourcePage){
+    renderRoot.innerHTML = "";
+    return null;
+  }
+
+  var jsPDF = window.jspdf.jsPDF;
+  var pdf = new jsPDF({ unit: "pt", format: "a4" });
+  var pageW = pdf.internal.pageSize.getWidth();
+  var pageH = pdf.internal.pageSize.getHeight();
+  var pageWidthPx = Math.max(1, Math.ceil(sourcePage.getBoundingClientRect().width || sourcePage.offsetWidth || 794));
+  var ratio = pageW / pageWidthPx;
+  var pageHeightPx = Math.max(1, Math.floor(pageH / ratio));
+
+  var headerSelector = "[data-pdf-repeat-header], .pdf-repeat-header";
+  var footerSelector = "[data-pdf-repeat-footer], .pdf-repeat-footer";
+  var contentSelector = "[data-pdf-content], .pdf-content";
+
+  var sourceHeader = sourcePage.querySelector(headerSelector);
+  var sourceFooter = sourcePage.querySelector(footerSelector);
+  var sourceContent = sourcePage.querySelector(contentSelector) || sourcePage;
+  var hasContentMarker = !!sourcePage.querySelector(contentSelector);
+  var footerBottomGapPx = 14;
+
+  applyPdfTableAutoFit(sourcePage);
+  localizeDigitsInTextNodes(sourcePage);
+  if(sourceFooter){
+    sourceFooter.style.marginBottom = `${footerBottomGapPx}px`;
+  }
+
+  var headerHeightPx = sourceHeader ? getOuterHeightPx(sourceHeader) : 0;
+  var footerHeightPx = sourceFooter ? getOuterHeightPx(sourceFooter) : 0;
+  var availableContentPx = Math.max(80, pageHeightPx - headerHeightPx - footerHeightPx - 4);
+
+  var blocks = getContentBlocksForPagination(sourceContent);
+  blocks = normalizeOversizedBlocks(blocks, availableContentPx);
+  var pageBlockGroups = splitBlocksToPages(blocks, availableContentPx);
+  var totalPages = Math.max(1, pageBlockGroups.length);
+
+  for(var pageIndex = 0; pageIndex < totalPages; pageIndex += 1){
+    var pageNo = pageIndex + 1;
+    var pageCloneHost = document.createElement("div");
+    pageCloneHost.innerHTML = baseTemplate;
+    var pageNode = pageCloneHost.querySelector(".pdf-page");
+    if(!pageNode) continue;
+
+    var contentNode = pageNode.querySelector(contentSelector);
+    var headerNode = pageNode.querySelector(headerSelector);
+    var footerNode = pageNode.querySelector(footerSelector);
+
+    if(contentNode){
+      contentNode.innerHTML = "";
+      var blockList = pageBlockGroups[pageIndex] || [];
+      blockList.forEach((block) => {
+        contentNode.appendChild(block.cloneNode(true));
+      });
+      if(hasContentMarker){
+        contentNode.style.minHeight = `${availableContentPx}px`;
+        contentNode.style.maxHeight = `${availableContentPx}px`;
+        contentNode.style.overflow = "hidden";
+      }
+    }
+
+    if(headerNode){
+      headerNode.innerHTML = replacePageTokens(headerNode.innerHTML, pageNo, totalPages);
+    }
+    if(footerNode){
+      footerNode.style.marginBottom = `${footerBottomGapPx}px`;
+      footerNode.innerHTML = replacePageTokens(footerNode.innerHTML, pageNo, totalPages);
+    }
+
+    // In case page number placeholders are used outside header/footer.
+    pageNode.innerHTML = replacePageTokens(pageNode.innerHTML, pageNo, totalPages);
+    applyPdfTableAutoFit(pageNode);
+    localizeDigitsInTextNodes(pageNode);
+    pageNode.style.width = `${pageWidthPx}px`;
+    pageNode.style.minHeight = `${pageHeightPx}px`;
+    pageNode.style.maxHeight = `${pageHeightPx}px`;
+    pageNode.style.overflow = "hidden";
+
+    renderRoot.innerHTML = "";
+    renderRoot.appendChild(pageNode);
+
+    var canvas = await window.html2canvas(pageNode, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+    });
+    var imgData = canvas.toDataURL("image/jpeg", 0.98);
+    var imgHeight = Math.min(pageH, canvas.height * ratio);
+    if(pageIndex > 0){
+      pdf.addPage();
+    }
+    pdf.addImage(imgData, "JPEG", 0, 0, pageW, imgHeight);
+  }
+
+  renderRoot.innerHTML = "";
+  return pdf;
+}
+
+function openPdfModal(dataUri){
+  const frame = document.getElementById("reportPdfModalFrame");
+  if(frame){
+    frame.src = dataUri || "";
+  }
+  if(!reportPdfModal){
+    const modalEl = document.getElementById("reportPdfModal");
+    if(modalEl && window.bootstrap && window.bootstrap.Modal){
+      reportPdfModal = new window.bootstrap.Modal(modalEl);
+    }
+  }
+  if(reportPdfModal){
+    reportPdfModal.show();
+  }
+}
+
+async function generatePdfFromReport() {
+  const trigger = document.getElementById("downloadPdfBtn");
+  try{
+    if(trigger) trigger.classList.add("disabled");
+    var pdf = await buildPdfFromTemplate();
+    if (!pdf) {
+      window.open("/reports/{{ report.id }}/pdf", "_blank");
+      return;
+    }
+    lastGeneratedPdf = pdf;
+    openPdfModal(pdf.output("datauristring"));
+  }catch(e){
+    showToast("تولید PDF سمت کاربر ناموفق بود. دانلود سروری باز شد.", "warning");
+    window.open("/reports/{{ report.id }}/pdf", "_blank");
+  }finally{
+    if(trigger) trigger.classList.remove("disabled");
+  }
+}
+
+async function generatePdfFromCalculator() {
+  await generatePdfFromReport();
+}
+
+function downloadModalPdf(){
+  if(lastGeneratedPdf){
+    lastGeneratedPdf.save(lastGeneratedPdfFilename);
+    return;
+  }
+  window.open("/reports/{{ report.id }}/pdf", "_blank");
+}
+
+function handlePdfButtonClick(event){
+  if(event){
+    event.preventDefault();
+  }
+  generatePdfFromReport();
+  return false;
+}
 
 function normalizeStatusKey(raw){
   const s = String(raw || "").trim();
@@ -1286,6 +1984,16 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if(flowModal){
     flowModal.addEventListener('shown.bs.modal', ()=>{
       renderWorkflowFlowDiagram();
+    });
+  }
+
+  const pdfModalEl = document.getElementById("reportPdfModal");
+  if(pdfModalEl){
+    pdfModalEl.addEventListener("hidden.bs.modal", ()=>{
+      const frame = document.getElementById("reportPdfModalFrame");
+      if(frame){
+        frame.src = "about:blank";
+      }
     });
   }
 

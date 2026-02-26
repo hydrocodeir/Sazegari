@@ -27,8 +27,8 @@ def upgrade() -> None:
             sa.Column("id", sa.Integer(), primary_key=True),
             sa.Column("org_id", sa.Integer(), sa.ForeignKey("orgs.id"), nullable=False),
             sa.Column("title", sa.String(length=200), nullable=False),
-            sa.Column("intro_text", sa.Text(), nullable=False, server_default="مقدمه: (متن ثابت/قابل‌ویرایش توسط کارشناس استان)"),
-            sa.Column("conclusion_text", sa.Text(), nullable=False, server_default="نتیجه‌گیری: (متن ثابت/قابل‌ویرایش توسط کارشناس استان)"),
+            sa.Column("intro_text", sa.Text(), nullable=False),
+            sa.Column("conclusion_text", sa.Text(), nullable=False),
             sa.UniqueConstraint("org_id", "title", name="uq_program_form_types_org_title"),
         )
         op.create_index("ix_program_form_types_org_id", "program_form_types", ["org_id"])
@@ -58,7 +58,7 @@ def upgrade() -> None:
             sa.Column("start_year", sa.Integer(), nullable=False),
             sa.Column("end_year", sa.Integer(), nullable=False),
             sa.Column("target_value", sa.Float(), nullable=False),
-            sa.Column("notes", sa.Text(), nullable=False, server_default=""),
+            sa.Column("notes", sa.Text(), nullable=False),
         )
         op.create_index("ix_program_baseline_rows_baseline_id", "program_baseline_rows", ["baseline_id"])
         op.create_index("ix_program_baseline_rows_row_no", "program_baseline_rows", ["row_no"])
@@ -89,7 +89,7 @@ def upgrade() -> None:
             sa.Column("quarterly_form_id", sa.Integer(), sa.ForeignKey("program_quarterly_forms.id"), nullable=False),
             sa.Column("baseline_row_id", sa.Integer(), sa.ForeignKey("program_baseline_rows.id"), nullable=False),
             sa.Column("result_value", sa.Float(), nullable=True),
-            sa.Column("actions_text", sa.Text(), nullable=False, server_default=""),
+            sa.Column("actions_text", sa.Text(), nullable=False),
             sa.UniqueConstraint("quarterly_form_id", "baseline_row_id", name="uq_program_quarterly_row_unique"),
         )
         op.create_index("ix_program_quarterly_rows_quarterly_form_id", "program_quarterly_rows", ["quarterly_form_id"])
@@ -99,3 +99,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Intentionally no destructive downgrade
     pass
+
