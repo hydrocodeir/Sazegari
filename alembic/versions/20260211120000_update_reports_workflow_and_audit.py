@@ -47,9 +47,9 @@ def upgrade() -> None:
             sa.Column("actor_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False, index=True),
             sa.Column("action", sa.String(length=50), nullable=False),
             sa.Column("field", sa.String(length=80), nullable=False, server_default=""),
-            sa.Column("before_json", sa.Text(), nullable=False, server_default=""),
-            sa.Column("after_json", sa.Text(), nullable=False, server_default=""),
-            sa.Column("comment", sa.Text(), nullable=False, server_default=""),
+            sa.Column("before_json", sa.Text(), nullable=False),
+            sa.Column("after_json", sa.Text(), nullable=False),
+            sa.Column("comment", sa.Text(), nullable=False),
         )
         op.create_index("ix_report_audit_logs_report_id", "report_audit_logs", ["report_id"])
         op.create_index("ix_report_audit_logs_actor_id", "report_audit_logs", ["actor_id"])
@@ -73,3 +73,4 @@ def downgrade() -> None:
     if "kind" in cols:
         with op.batch_alter_table("reports") as batch:
             batch.drop_column("kind")
+

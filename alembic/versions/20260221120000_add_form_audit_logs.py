@@ -31,9 +31,9 @@ def upgrade() -> None:
             sa.Column("action", sa.String(length=50), nullable=False),
             sa.Column("entity", sa.String(length=80), nullable=False),
             sa.Column("entity_id", sa.Integer(), nullable=False),
-            sa.Column("before_json", sa.Text(), server_default="", nullable=False),
-            sa.Column("after_json", sa.Text(), server_default="", nullable=False),
-            sa.Column("comment", sa.Text(), server_default="", nullable=False),
+            sa.Column("before_json", sa.Text(), nullable=False),
+            sa.Column("after_json", sa.Text(), nullable=False),
+            sa.Column("comment", sa.Text(), nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         )
 
@@ -62,3 +62,4 @@ def downgrade() -> None:
     insp = inspect(bind)
     if "form_audit_logs" in insp.get_table_names():
         op.drop_table("form_audit_logs")
+
