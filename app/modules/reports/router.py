@@ -35,6 +35,7 @@ from app.utils.report_agg import aggregate_content
 from app.utils.report_doc import load_doc, dump_doc
 from app.utils.program_report import build_program_report, resolve_latest_period
 from app.utils.notify import notify
+from app.utils.report_pdf_template import get_report_pdf_template_html
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -440,6 +441,7 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
             "badge_count": get_badge_count(db, user),
             "actor_map": actor_map,
             "can_edit": _can_edit(user, r),
+            "pdf_template_html": get_report_pdf_template_html(),
         },
     )
 

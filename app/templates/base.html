@@ -94,6 +94,9 @@
         <a class="sidebar-link {% if request.url.path.startswith('/programs') %}active{% endif %}" href="/programs">
           <i class="bi bi-table"></i><span>پایش برنامه</span>
         </a>
+        <a class="sidebar-link {% if request.url.path.startswith('/report-template') %}active{% endif %}" href="/report-template">
+          <i class="bi bi-filetype-pdf"></i><span>قالب PDF گزارش</span>
+        </a>
         {% endif %}
         {% if user and can_view_forms(user) %}
 
@@ -215,6 +218,9 @@
         <a class="btn btn-outline-secondary w-100 mb-2" href="/counties">شهرستان‌ها</a>
         <a class="btn btn-outline-secondary w-100 mb-2" href="/org-counties">ارگان↔شهرستان</a>
         <a class="btn btn-outline-secondary w-100 mb-2" href="/programs">پایش برنامه</a>
+        {% if user and user.role and user.role.value == 'secretariat_admin' %}
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/report-template">قالب PDF گزارش</a>
+        {% endif %}
         <a class="btn btn-outline-secondary w-100 mb-2" href="/forms">فرم‌ها</a>
         <a class="btn btn-outline-secondary w-100 mb-2" href="/users">کاربران</a>
       {% endif %}
