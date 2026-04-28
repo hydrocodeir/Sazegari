@@ -6,7 +6,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_DEFAULT_TIMEOUT=120
 
 WORKDIR /app
-
+RUN echo "deb http://ftp.debian.org/debian trixie main" > /etc/apt/sources.list
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -26,6 +26,6 @@ COPY alembic /app/alembic
 COPY app /app/app
 COPY README.md /app/README.md
 
-EXPOSE 8000
+EXPOSE 8765
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8765 --workers ${UVICORN_WORKERS:-4}"]

@@ -5,4 +5,4 @@ if [ -f .env ]; then
 fi
 python -m app.scripts.fetch_ckeditor || true
 python -m app.scripts.fetch_fonts || true
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8765

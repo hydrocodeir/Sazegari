@@ -250,7 +250,7 @@ docker compose up --build
 ```
 
 سپس:
-- برنامه: `http://localhost:8000`
+- برنامه: `http://localhost:8765`
 - دیتابیس: `localhost:3306` (MySQL)
 - Redis: `localhost:6379`
 
