@@ -24,11 +24,11 @@
 
     <!-- Sidebar -->
     <aside class="app-sidebar">
-      <div class="sidebar-brand">
-        <a href="/" class="d-flex align-items-center gap-2 text-decoration-none">
-          <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="Logo" height="40" class="tw-rounded-xl tw-bg-white tw-p-1">
+      <!-- <div class="sidebar-brand">
+        <a href="/" class="sidebar-brand-logo" aria-label="صفحه اصلی">
+          <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="لوگو">
         </a>
-      </div>
+      </div> -->
 
       <div class="sidebar-section">
         <div class="sidebar-caption">منو</div>
@@ -116,7 +116,7 @@
       </div>
       {% endif %}
 
-      <div class="sidebar-footer mt-auto">
+      <!-- <div class="sidebar-footer mt-auto">
         {% if user %}
           <div class="small text-muted mb-2">ورود با:</div>
           <div class="d-flex align-items-center justify-content-between gap-2">
@@ -131,26 +131,29 @@
         {% else %}
           <a class="btn btn-sm btn-primary w-100" href="/login">ورود</a>
         {% endif %}
-      </div>
+      </div> -->
     </aside>
 
     <!-- Main -->
     <div class="app-main">
       <!-- Topbar -->
-      <header class="app-topbar">
-        <button class="btn btn-sm btn-outline-secondary d-lg-none" type="button" data-mobile-sidebar-open aria-label="باز کردن منو">
-          <i data-lucide="menu"></i>
-        </button>
+      <header class="app-topbar chart-card">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
+          <button class="btn btn-sm btn-outline-secondary d-lg-none" type="button" data-mobile-sidebar-open aria-label="باز کردن منو">
+            <i data-lucide="menu"></i>
+          </button>
 
-        <div class="topbar-title">
-          {% block page_title %}سامانه سازگاری با کم‌آبی{% endblock %}
-        </div>
+          <!-- <div class="topbar-title">
+            {% block page_title %}سامانه سازگاری با کم‌آبی{% endblock %}
+          </div> -->
 
-        <div class="ms-auto d-flex align-items-center gap-2">
           <div class="topbar-search">
             <i data-lucide="search"></i>
             <input type="search" placeholder="جستجو..." aria-label="جستجو">
           </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
           <a class="btn btn-sm btn-outline-secondary position-relative" href="/notifications" title="اعلان‌ها">
             <i data-lucide="bell"></i>
             {% if badge_count and badge_count>0 %}
