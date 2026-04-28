@@ -258,9 +258,9 @@ function _mkLayoutRowElement(prefill){
   const actions = document.createElement("div");
   actions.className = "d-flex gap-2";
   actions.innerHTML = `
-    <button type="button" class="btn btn-sm btn-outline-secondary" title="بالا" data-act="up"><i class="bi bi-arrow-up"></i></button>
-    <button type="button" class="btn btn-sm btn-outline-secondary" title="پایین" data-act="down"><i class="bi bi-arrow-down"></i></button>
-    <button type="button" class="btn btn-sm btn-outline-danger" title="حذف" data-act="del"><i class="bi bi-trash"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="بالا" data-act="up"><i data-lucide="arrow-up"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="پایین" data-act="down"><i data-lucide="arrow-down"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-danger" title="حذف" data-act="del"><i data-lucide="trash-2"></i></button>
   `;
   actions.querySelector('[data-act="up"]').addEventListener("click", ()=>moveLayoutRow(rowWrap, -1));
   actions.querySelector('[data-act="down"]').addEventListener("click", ()=>moveLayoutRow(rowWrap, +1));
@@ -331,6 +331,7 @@ function addLayoutRow(prefill=null){
   if(!rowsEl) return;
   const rowEl = _mkLayoutRowElement(prefill || {columns: 2, fields: []});
   rowsEl.appendChild(rowEl);
+  refreshLucideIcons(rowEl);
   syncSchemaFromBuilder();
 }
 
@@ -529,31 +530,120 @@ document.addEventListener("DOMContentLoaded", ()=>{
 // ----------------------------
 // Global UI helpers (Toast)
 // ----------------------------
+function refreshLucideIcons(root=document){
+  try{
+    if(window.lucide && typeof window.lucide.createIcons === "function"){
+      window.lucide.createIcons({
+        attrs: {
+          "stroke-width": 2,
+          width: 18,
+          height: 18
+        }
+      });
+    }
+  }catch(e){}
+}
+
+function openUiModal(target){
+  const modalEl = typeof target === "string" ? document.getElementById(target) : target;
+  if(!modalEl) return;
+  modalEl.classList.add("show");
+  modalEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  refreshLucideIcons(modalEl);
+  modalEl.dispatchEvent(new CustomEvent("ui-modal:shown"));
+}
+
+function closeUiModal(target){
+  const modalEl = typeof target === "string" ? document.getElementById(target) : target;
+  if(!modalEl) return;
+  modalEl.classList.remove("show");
+  modalEl.setAttribute("aria-hidden", "true");
+  if(!document.querySelector(".ui-modal.show")){
+    document.body.classList.remove("modal-open");
+  }
+  modalEl.dispatchEvent(new CustomEvent("ui-modal:hidden"));
+}
+
+window.openUiModal = openUiModal;
+window.closeUiModal = closeUiModal;
+
+function initModalControls(root=document){
+  const scope = root || document;
+  scope.querySelectorAll("[data-modal-close]").forEach(btn=>{
+    if(btn.dataset.modalBound === "1") return;
+    btn.dataset.modalBound = "1";
+    btn.addEventListener("click", ()=>{
+      const id = btn.getAttribute("data-modal-close");
+      closeUiModal(id || btn.closest(".ui-modal"));
+    });
+  });
+}
+
+function initMobileSidebar(){
+  const sidebar = document.getElementById("mobileSidebar");
+  if(!sidebar || sidebar.dataset.bound === "1") return;
+  sidebar.dataset.bound = "1";
+
+  function open(){
+    sidebar.classList.add("show");
+    sidebar.setAttribute("aria-hidden", "false");
+    document.body.classList.add("drawer-open");
+    refreshLucideIcons(sidebar);
+  }
+
+  function close(){
+    sidebar.classList.remove("show");
+    sidebar.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("drawer-open");
+  }
+
+  document.querySelectorAll("[data-mobile-sidebar-open]").forEach(btn=>{
+    btn.addEventListener("click", open);
+  });
+  sidebar.querySelectorAll("[data-mobile-sidebar-close], a").forEach(el=>{
+    el.addEventListener("click", close);
+  });
+  document.addEventListener("keydown", (e)=>{
+    if(e.key === "Escape"){
+      closeUiModal(document.querySelector(".ui-modal.show"));
+      close();
+    }
+  });
+}
+
 function showToast(message, variant="success"){
   try{
     const container = document.getElementById("toastContainer");
     if(!container){ return; }
 
     const toastEl = document.createElement("div");
-    toastEl.className = `toast align-items-center text-bg-${variant} border-0`;
+    toastEl.className = `toast toast-${variant}`;
     toastEl.setAttribute("role","alert");
     toastEl.setAttribute("aria-live","assertive");
     toastEl.setAttribute("aria-atomic","true");
 
     toastEl.innerHTML = `
-      <div class="d-flex">
+      <div class="toast-row">
         <div class="toast-body">${message}</div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        <button type="button" class="toast-close" aria-label="بستن"><i data-lucide="x"></i></button>
       </div>
     `;
     container.appendChild(toastEl);
-    const t = new bootstrap.Toast(toastEl, {delay: 2500});
-    t.show();
-    toastEl.addEventListener("hidden.bs.toast", ()=>{ toastEl.remove(); });
+    refreshLucideIcons(toastEl);
+    requestAnimationFrame(()=>toastEl.classList.add("show"));
+    toastEl.querySelector(".toast-close")?.addEventListener("click", ()=>removeToast(toastEl));
+    setTimeout(()=>removeToast(toastEl), 3200);
   }catch(e){
     // fallback
     console.log(message);
   }
+}
+
+function removeToast(toastEl){
+  if(!toastEl) return;
+  toastEl.classList.remove("show");
+  setTimeout(()=>toastEl.remove(), 180);
 }
 
 // ----------------------------
@@ -574,12 +664,7 @@ function buildLoginUrl(nextUrl){
 }
 
 function ensureDisconnectModal(){
-  const modalEl = document.getElementById("disconnectModal");
-  if(!modalEl || typeof bootstrap === "undefined") return null;
-  if(!disconnectModal){
-    disconnectModal = new bootstrap.Modal(modalEl, {backdrop: "static", keyboard: false});
-  }
-  return disconnectModal;
+  return document.getElementById("disconnectModal");
 }
 
 function showDisconnectModal({reason, message, loginUrl="", allowLogin=false, allowRetry=true}){
@@ -608,7 +693,7 @@ function showDisconnectModal({reason, message, loginUrl="", allowLogin=false, al
   }
 
   const m = ensureDisconnectModal();
-  if(m) m.show();
+  if(m) openUiModal(m);
 }
 
 function handleSessionExpired(loginUrl){
@@ -814,6 +899,9 @@ window.addEventListener("beforeunload", ()=>{
 });
 
 document.addEventListener("DOMContentLoaded", ()=>{
+  refreshLucideIcons(document);
+  initMobileSidebar();
+  initModalControls(document);
   startRealtimeSessionMonitor();
 });
 
@@ -871,12 +959,20 @@ function paginateTable(table){
   let pageSize = defaultSize;
   let page = _num(table.dataset.page) || 1;
 
-  function totalPages(){
-    return Math.max(1, Math.ceil(allRows.length / pageSize));
+  function filteredRows(){
+    const query = (table.dataset.filter || "").trim().toLowerCase();
+    if(!query) return allRows;
+    return allRows.filter(r => (r.textContent || "").toLowerCase().includes(query));
+  }
+
+  function totalPages(rows){
+    return Math.max(1, Math.ceil(rows.length / pageSize));
   }
 
   function render(){
-    const tp = totalPages();
+    const rows = filteredRows();
+    const rowSet = new Set(rows);
+    const tp = totalPages(rows);
     if(page > tp) page = tp;
     if(page < 1) page = 1;
     table.dataset.page = String(page);
@@ -885,12 +981,15 @@ function paginateTable(table){
     const start = (page - 1) * pageSize;
     const end = start + pageSize;
 
-    allRows.forEach((r, idx)=>{
-      r.style.display = (idx >= start && idx < end) ? "" : "none";
+    allRows.forEach((r)=>{
+      r.style.display = "none";
+    });
+    rows.forEach((r, idx)=>{
+      r.style.display = (rowSet.has(r) && idx >= start && idx < end) ? "" : "none";
     });
 
     // Update labels/buttons
-    info.textContent = `صفحه ${page} از ${tp} — ${allRows.length} سطر`;
+    info.textContent = `صفحه ${page} از ${tp} — ${rows.length} سطر`;
     prevBtn.disabled = (page <= 1);
     nextBtn.disabled = (page >= tp);
   }
@@ -936,6 +1035,7 @@ function paginateTable(table){
   // Insert after table
   table.parentElement?.appendChild(pager);
   table._pagerEl = pager;
+  table._renderPager = ()=>{ page = _num(table.dataset.page) || 1; render(); };
 
   render();
 }
@@ -945,11 +1045,34 @@ function initPaginatedTables(root=document){
   tables.forEach(paginateTable);
 }
 
+function initTableFilters(root=document){
+  const inputs = Array.from((root || document).querySelectorAll("[data-table-filter]"));
+  inputs.forEach(input=>{
+    if(input.dataset.filterBound === "1") return;
+    input.dataset.filterBound = "1";
+    const table = document.querySelector(input.dataset.tableFilter);
+    if(!table) return;
+    input.addEventListener("input", ()=>{
+      table.dataset.filter = input.value || "";
+      table.dataset.page = "1";
+      if(typeof table._renderPager === "function"){
+        table._renderPager();
+      }else{
+        paginateTable(table);
+      }
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", ()=>{
   initPaginatedTables(document);
+  initTableFilters(document);
 });
 
 // Re-init after HTMX swaps
 document.body.addEventListener("htmx:afterSwap", (e)=>{
   initPaginatedTables(e.target || document);
+  initTableFilters(document);
+  refreshLucideIcons(e.target || document);
+  initModalControls(e.target || document);
 });

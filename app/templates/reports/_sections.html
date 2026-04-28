@@ -16,7 +16,7 @@
           <div class="d-flex align-items-center gap-2">
             {% if can_edit %}
               <span class="drag-handle text-muted" style="cursor:grab" title="جابجایی">
-                <i class="bi bi-grip-vertical"></i>
+                <i data-lucide="grip-vertical"></i>
               </span>
             {% endif %}
             <div>
@@ -26,10 +26,10 @@
           </div>
 
           <div class="d-flex flex-wrap gap-2 align-items-center">
-            <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ sub.id }}"><i class="bi bi-box-arrow-up-left me-1"></i>مشاهده ثبت</a>
-            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleSectionBody({{ sub.id }})"><i class="bi bi-chevron-down me-1"></i>جزئیات</button>
+            <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ sub.id }}"><i data-lucide="external-link"></i>مشاهده ثبت</a>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleSectionBody({{ sub.id }})"><i data-lucide="chevron-down"></i>جزئیات</button>
             {% if can_edit %}
-              <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeSection({{ sub.id }})"><i class="bi bi-x-circle me-1"></i>حذف</button>
+              <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeSection({{ sub.id }})"><i data-lucide="circle-x"></i>حذف</button>
             {% endif %}
           </div>
         </div>
@@ -40,7 +40,7 @@
               <div class="bg-body-tertiary rounded-4 p-3">
                 <div class="d-flex justify-content-between align-items-center">
                   <div class="small text-muted">توضیحات این بخش (در PDF نمایش داده می‌شود)</div>
-                  <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})"><i class="bi bi-save me-1"></i>ذخیره</button>
+                  <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveSectionDesc({{ sub.id }})"><i data-lucide="save"></i>ذخیره</button>
                 </div>
                 <div class="mt-2">
                   <textarea id="secEditor_{{ sub.id }}" class="rte-textarea">{{ sec.description_html | e }}</textarea>
@@ -143,10 +143,10 @@
               <div class="text-muted small">خروجی ثبت‌شده در گزارش (Snapshot)</div>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleProgramBody('{{ ps.id }}')"><i class="bi bi-chevron-down me-1"></i>جزئیات</button>
+              <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleProgramBody('{{ ps.id }}')"><i data-lucide="chevron-down"></i>جزئیات</button>
               {% if can_edit %}
-                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="regenerateProgramSection('{{ ps.id }}')"><i class="bi bi-arrow-repeat me-1"></i>بازتولید</button>
-                <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeProgramSection('{{ ps.id }}')"><i class="bi bi-x-circle me-1"></i>حذف</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="regenerateProgramSection('{{ ps.id }}')"><i data-lucide="refresh-cw"></i>بازتولید</button>
+                <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeProgramSection('{{ ps.id }}')"><i data-lucide="circle-x"></i>حذف</button>
               {% endif %}
             </div>
           </div>
@@ -157,7 +157,7 @@
                 <div class="bg-body-tertiary rounded-4 p-3">
                   <div class="d-flex justify-content-between align-items-center">
                     <div class="small text-muted">توضیحات این خروجی (در PDF نمایش داده می‌شود)</div>
-                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveProgramSectionDesc('{{ ps.id }}')"><i class="bi bi-save me-1"></i>ذخیره</button>
+                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveProgramSectionDesc('{{ ps.id }}')"><i data-lucide="save"></i>ذخیره</button>
                   </div>
                   <div class="mt-2">
                     <textarea id="progEditor_{{ ps.id }}" class="rte-textarea">{{ (ps.description_html or '') | e }}</textarea>

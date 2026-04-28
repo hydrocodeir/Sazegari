@@ -2,82 +2,66 @@
 {% block page_title %}داشبورد مدیر استان{% endblock %}
 
 {% block content %}
-<div class="row g-3">
-  <div class="col-12">
-    <div class="card p-4 border-0 shadow-sm hover-lift">
-      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
-        <div>
-          <div class="h5 mb-1">خوش آمدید، {{ user.full_name or user.username }}</div>
-          <div class="text-muted">نمایش تجمیعی داده‌ها و فرم‌های ثبت‌شده در سطح استان</div>
-        </div>
-        <div class="d-flex gap-2">
-          <a class="btn btn-outline-primary" href="/reports"><i class="bi bi-file-earmark-text me-1"></i>گزارش‌ها</a>
-          <a class="btn btn-outline-secondary" href="/notifications"><i class="bi bi-bell me-1"></i>اعلان‌ها</a>
-        </div>
-      </div>
+<div class="dashboard-page">
+  <div class="dashboard-heading">
+    <div>
+      <div class="dashboard-breadcrumb">صفحات / داشبورد مدیر استان</div>
+      <h1>داشبورد مدیر استان</h1>
+      <p>سلام {{ user.full_name or user.username }}، وضعیت تجمیعی داده‌ها، گزارش‌ها و برنامه استان را رصد کنید.</p>
+    </div>
+    <div class="dashboard-actions">
+      <a class="btn btn-primary" href="/reports"><i data-lucide="file-text"></i>گزارش‌ها</a>
+      <a class="btn btn-outline-secondary" href="/notifications"><i data-lucide="bell"></i>اعلان‌ها</a>
     </div>
   </div>
 
-  <div class="col-md-3">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <div class="text-muted small">اعلان‌های خوانده‌نشده</div>
-          <div class="h4 m-0">{{ kpi.unread_notifications }}</div>
-        </div>
-        <div class="display-6 text-primary"><i class="bi bi-bell"></i></div>
+  <div class="dashboard-kpis">
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">اعلان‌های خوانده‌نشده</div>
+        <div class="kpi-value">{{ kpi.unread_notifications }}</div>
       </div>
-      <a class="small mt-2" href="/notifications">مشاهده اعلان‌ها</a>
+      <div class="kpi-icon"><i data-lucide="bell"></i></div>
+      <div class="kpi-footer"><span class="neutral">{{ kpi.unread_notifications }}</span> مورد جدید</div>
+    </div>
+
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">گزارش‌های در صف شما</div>
+        <div class="kpi-value">{{ kpi.my_queue }}</div>
+      </div>
+      <div class="kpi-icon"><i data-lucide="inbox"></i></div>
+      <div class="kpi-footer"><span class="neutral">{{ kpi.my_queue }}</span> در انتظار اقدام</div>
+    </div>
+
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">کل گزارش‌ها</div>
+        <div class="kpi-value">{{ kpi.total_reports }}</div>
+      </div>
+      <div class="kpi-icon"><i data-lucide="files"></i></div>
+      <div class="kpi-footer"><span class="positive">سازمان</span> محدوده استان</div>
+    </div>
+
+    <div class="kpi-card">
+      <div>
+        <div class="kpi-label">ثبت داده‌ها</div>
+        <div class="kpi-value">{{ kpi.total_submissions }}</div>
+      </div>
+      <div class="kpi-icon"><i data-lucide="clipboard-list"></i></div>
+      <div class="kpi-footer"><span class="positive">تجمیعی</span> سازمان</div>
     </div>
   </div>
 
-  <div class="col-md-3">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex align-items-center justify-content-between">
+  <section class="section-panel">
+      <div class="filter-strip">
         <div>
-          <div class="text-muted small">گزارش‌های در صف شما</div>
-          <div class="h4 m-0">{{ kpi.my_queue }}</div>
-        </div>
-        <div class="display-6 text-primary"><i class="bi bi-inbox"></i></div>
-      </div>
-      <a class="small mt-2" href="/reports">رفتن به گزارش‌ها</a>
-    </div>
-  </div>
-
-  <div class="col-md-3">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <div class="text-muted small">کل گزارش‌ها (سازمان)</div>
-          <div class="h4 m-0">{{ kpi.total_reports }}</div>
-        </div>
-        <div class="display-6 text-primary"><i class="bi bi-files"></i></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-3">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <div class="text-muted small">کل ثبت داده‌ها (سازمان)</div>
-          <div class="h4 m-0">{{ kpi.total_submissions }}</div>
-        </div>
-        <div class="display-6 text-primary"><i class="bi bi-ui-checks"></i></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
-        <div>
-          <div class="h6 m-0">نمایش داده‌ها و فرم‌های وارد شده</div>
-          <div class="text-muted small">با انتخاب شهرستان، جدول‌ها به‌صورت خودکار به‌روزرسانی می‌شوند.</div>
+          <h2 class="section-title">نمایش داده‌ها و فرم‌های وارد شده</h2>
+          <p class="section-note">با انتخاب شهرستان، جدول‌ها به‌صورت خودکار به‌روزرسانی می‌شوند.</p>
         </div>
 
         <div class="d-flex align-items-center gap-2">
-          <label class="small text-muted m-0" for="county_id">شهرستان:</label>
+          <label class="small tw-font-black tw-text-[#31524c] m-0" for="county_id">شهرستان:</label>
           <select
             id="county_id"
             name="county_id"
@@ -103,17 +87,15 @@
       </div>
 
       <div id="prov-tables" class="mt-3">
-        <div class="text-muted">در حال بارگذاری...</div>
+        <div class="empty-state">در حال بارگذاری...</div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <div class="col-12">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex justify-content-between align-items-center mb-2">
+  <section class="section-panel">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
         <div>
-          <div class="h6 m-0">پایش برنامه (گراف ستونی هدف/تحقق)</div>
-          <div class="text-muted small">نمایش تجمیعی کل استان بر اساس تیپ فرم‌ها و ردیف/پروژه‌ها</div>
+          <h2 class="section-title">پایش برنامه</h2>
+          <p class="section-note">نمایش تجمیعی کل استان بر اساس تیپ فرم‌ها و ردیف/پروژه‌ها</p>
         </div>
         <div class="htmx-indicator" id="prov-program-loading">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -127,9 +109,8 @@
         hx-swap="innerHTML"
         hx-indicator="#prov-program-loading"
       >
-        <div class="text-muted">در حال بارگذاری...</div>
+        <div class="empty-state">در حال بارگذاری...</div>
       </div>
-    </div>
-  </div>
+    </section>
 </div>
 {% endblock %}

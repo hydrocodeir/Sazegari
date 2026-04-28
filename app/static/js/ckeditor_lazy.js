@@ -22,7 +22,7 @@
 
     _loadingPromise = (async ()=>{
       try{
-        // Preconnect hint (helps on some browsers even for same-origin if behind proxy/CDN)
+        // Preload the local script to keep the editor responsive.
         try{
           const link = document.createElement("link");
           link.rel = "preload";
@@ -31,12 +31,7 @@
           document.head.appendChild(link);
         }catch(e){}
         await loadScript(CK_URL);
-      } catch(e){
-        // Fallback to CDN if local not present (e.g., offline build step failed)
-        try{
-          await loadScript("https://cdn.ckeditor.com/4.22.1/standard/ckeditor.js");
-        }catch(_){}
-      }
+      } catch(e){}
     })();
 
     await _loadingPromise;

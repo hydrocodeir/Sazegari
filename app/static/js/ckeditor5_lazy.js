@@ -4,7 +4,6 @@
 (function(){
   const CK5_URL = window.__CKEDITOR5_URL__ || "/static/vendor/ckeditor5/ckeditor.js";
   const CK5_FA_URL = window.__CKEDITOR5_FA_URL__ || "/static/vendor/ckeditor5/translations/fa.js";
-  const FALLBACK_VER = window.__CKEDITOR5_FALLBACK_VER__ || "44.3.0";
 
   let _loadingPromise = null;
 
@@ -41,21 +40,14 @@
       preloadScript(CK5_URL);
       try{
         await loadScript(CK5_URL);
-      }catch(e){
-        // Fallback to jsDelivr (npm build)
-        await loadScript(`https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@${FALLBACK_VER}/build/ckeditor.js`);
-      }
+      }catch(e){}
 
       // Load Persian UI translation if available (optional)
       if(!(window.CKEDITOR_TRANSLATIONS && window.CKEDITOR_TRANSLATIONS.fa)){
         preloadScript(CK5_FA_URL);
         try{
           await loadScript(CK5_FA_URL);
-        }catch(e){
-          try{
-            await loadScript(`https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@${FALLBACK_VER}/build/translations/fa.js`);
-          }catch(_){ /* ignore */ }
-        }
+        }catch(e){}
       }
     })();
 

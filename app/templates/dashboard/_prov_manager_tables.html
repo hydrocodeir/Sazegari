@@ -9,11 +9,11 @@
 
 <div class="row g-3">
   <div class="col-lg-6">
-    <div class="card p-3 border-0 shadow-sm">
+    <div class="section-panel tw-h-full">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
-          <div class="h6 m-0">داده‌های ثبت‌شده</div>
-          <div class="text-muted small">حوزه: {{ scope_label }} (تا 200 مورد)</div>
+          <h3 class="section-title tw-text-sm">داده‌های ثبت‌شده</h3>
+          <p class="section-note tw-text-xs">حوزه: {{ scope_label }} (تا 200 مورد)</p>
         </div>
       </div>
 
@@ -43,7 +43,7 @@
                   </td>
                   <td>{{ s.created_by_id }}</td>
                   <td class="text-end">
-                    <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ s.id }}">مشاهده</a>
+                    <a class="btn btn-sm btn-outline-primary" href="/submissions/{{ s.id }}"><i data-lucide="eye"></i>مشاهده</a>
                   </td>
                 </tr>
               {% endfor %}
@@ -51,17 +51,17 @@
           </table>
         </div>
       {% else %}
-        <div class="text-muted">موردی وجود ندارد.</div>
+        <div class="empty-state">موردی وجود ندارد.</div>
       {% endif %}
     </div>
   </div>
 
   <div class="col-lg-6">
-    <div class="card p-3 border-0 shadow-sm">
+    <div class="section-panel tw-h-full">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
-          <div class="h6 m-0">فرم‌ها/گزارش‌های وارد شده</div>
-          <div class="text-muted small">حوزه: {{ scope_label }} (تا 200 مورد)</div>
+          <h3 class="section-title tw-text-sm">فرم‌ها/گزارش‌های وارد شده</h3>
+          <p class="section-note tw-text-xs">حوزه: {{ scope_label }} (تا 200 مورد)</p>
         </div>
       </div>
 
@@ -93,7 +93,7 @@
                   <td>{{ r.status_label }}</td>
                   <td>{{ owner_names.get(r.current_owner_id, r.current_owner_id) if r.current_owner_id else '-' }}</td>
                   <td class="text-end">
-                    <a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">مشاهده</a>
+                    <a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}"><i data-lucide="eye"></i>مشاهده</a>
                   </td>
                 </tr>
               {% endfor %}
@@ -101,7 +101,7 @@
           </table>
         </div>
       {% else %}
-        <div class="text-muted">موردی وجود ندارد.</div>
+        <div class="empty-state">موردی وجود ندارد.</div>
       {% endif %}
     </div>
   </div>

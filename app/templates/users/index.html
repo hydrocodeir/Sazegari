@@ -2,11 +2,39 @@
 {% block page_title %}کاربران{% endblock %}
 {% block content %}
 
-<div class="row g-3">
-  <div class="col-lg-4">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <h5 class="mb-2">ایجاد کاربر جدید</h5>
-      <form hx-post="/users" hx-target="#users-tbody" hx-swap="afterbegin" class="vstack gap-2" id="createUserForm">
+{% set active_count = users|selectattr("is_active")|list|length %}
+
+<section class="page-hero">
+  <div class="page-hero-content">
+    <div>
+      <span class="page-eyebrow"><i data-lucide="users"></i> مدیریت دسترسی</span>
+      <h1 class="page-title">کاربران سامانه</h1>
+      <p class="page-subtitle">ایجاد، ویرایش و کنترل وضعیت کاربران بر اساس نقش، ارگان و محدوده شهرستانی.</p>
+    </div>
+    <div class="page-metrics">
+      <div class="metric-pill">
+        <strong>{{ users|length }}</strong>
+        <span>کل کاربران</span>
+      </div>
+      <div class="metric-pill">
+        <strong>{{ active_count }}</strong>
+        <span>کاربر فعال</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="admin-layout">
+  <aside class="admin-panel form-card">
+    <div class="admin-panel-header">
+      <div>
+        <h2 class="admin-panel-title">ایجاد کاربر جدید</h2>
+        <p class="admin-panel-note">اطلاعات پایه و محدوده دسترسی را وارد کنید.</p>
+      </div>
+      <span class="badge text-bg-light"><i data-lucide="shield-check"></i> مدیر دبیرخانه</span>
+    </div>
+    <div class="admin-panel-body">
+      <form hx-post="/users" hx-target="#users-tbody" hx-swap="afterbegin" class="form-grid" id="createUserForm">
         <input class="form-control" name="full_name" placeholder="نام کامل" required>
         <input class="form-control" name="username" placeholder="نام کاربری" required>
         <input class="form-control" name="password" placeholder="رمز عبور" type="password" required>
@@ -32,21 +60,27 @@
           {% endfor %}
         </select>
 
-        <button class="btn btn-primary" type="submit">ایجاد</button>
+        <button class="btn btn-primary" type="submit"><i data-lucide="user-plus"></i> ایجاد کاربر</button>
       </form>
       <div class="small text-muted mt-2">مدیریت کاربران فقط برای مدیر دبیرخانه فعال است.</div>
     </div>
-  </div>
+  </aside>
 
-  <div class="col-lg-8">
-    <div class="card p-3 border-0 shadow-sm hover-lift">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h5 class="m-0">لیست کاربران</h5>
-        <span class="text-muted small">{{ users|length }} مورد</span>
+  <section class="admin-panel">
+    <div class="admin-panel-header">
+      <div>
+        <h2 class="admin-panel-title">لیست کاربران</h2>
+        <p class="admin-panel-note">مرتب‌سازی و صفحه‌بندی جدول به صورت سمت کاربر انجام می‌شود.</p>
       </div>
+      <span class="badge text-bg-light">{{ users|length }} مورد</span>
+    </div>
 
+    <div class="admin-panel-body">
+      <div class="table-toolbar">
+        <input class="form-control form-control-sm table-search" type="search" placeholder="جستجوی سریع در کاربران" data-table-filter="#users-table">
+      </div>
       <div class="table-responsive">
-        <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
+        <table id="users-table" class="table table-sm align-middle" data-paginate="true" data-page-size="8">
           <thead>
             <tr>
               <th>#</th>
@@ -67,7 +101,7 @@
         </table>
       </div>
     </div>
-  </div>
+  </section>
 </div>
 
 {% endblock %}

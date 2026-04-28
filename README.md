@@ -26,6 +26,7 @@ Backend با **MySQL** (SQLAlchemy + Alembic) و کش/Badge اعلان‌ها ب
 - Python 3.11
 - FastAPI + Uvicorn
 - Jinja2 Templates + HTMX (UI سرور-رندر)
+- Tailwind CSS و Lucide Icons به‌صورت محلی برای لایه UI (`npm run build:css`)
 - SQLAlchemy 2 + Alembic (Migration)
 - MySQL 8
 - Redis 7
@@ -167,6 +168,8 @@ flowchart TD
 ├── docker-compose.yml         # web + migrate + mysql + redis
 ├── Dockerfile
 ├── requirements.txt
+├── package.json              # ابزار build محلی Tailwind CSS
+├── tailwind.config.js
 ├── run.sh                     # اجرای محلی با uvicorn --reload
 └── uploads/                   # ذخیره فایل‌های آپلود شده (volume)
 ```

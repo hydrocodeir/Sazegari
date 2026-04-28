@@ -1,28 +1,28 @@
 {% if not charts or charts|length == 0 %}
-  <div class="text-muted">برای نمایش گراف پایش برنامه، هنوز داده‌ای ثبت نشده است.</div>
+  <div class="empty-state">برای نمایش گراف پایش برنامه، هنوز داده‌ای ثبت نشده است.</div>
 {% else %}
-  <div class="d-flex align-items-center gap-3 small text-muted mb-2">
+  <div class="d-flex align-items-center gap-3 small text-muted mb-3">
     <span class="d-inline-flex align-items-center gap-1"><span class="prog-legend target"></span> هدف</span>
     <span class="d-inline-flex align-items-center gap-1"><span class="prog-legend achieved"></span> تحقق</span>
     <span class="ms-auto">(نمایش: تجمیع شهرستان‌ها)</span>
   </div>
 
-  <div class="accordion" id="provProgramAccordion">
+  <div class="ui-accordion" id="provProgramAccordion">
     {% for ch in charts %}
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="provProgHead{{ ch.type.id }}">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#provProgCol{{ ch.type.id }}" aria-expanded="false" aria-controls="provProgCol{{ ch.type.id }}">
+      <details class="accordion-item">
+        <summary class="accordion-button">
+          <span>
             {{ ch.type.title }}
             {% if ch.latest_label %}
               <span class="badge text-bg-light ms-2">آخرین بازه: {{ ch.latest_label }}</span>
             {% endif %}
-          </button>
-        </h2>
-        <div id="provProgCol{{ ch.type.id }}" class="accordion-collapse collapse" aria-labelledby="provProgHead{{ ch.type.id }}" data-bs-parent="#provProgramAccordion">
-          <div class="accordion-body">
+          </span>
+          <i data-lucide="chevron-down"></i>
+        </summary>
+        <div class="accordion-body">
 
             {% if not ch.rows or ch.rows|length == 0 %}
-              <div class="text-muted">برای این تیپ فرم هنوز داده‌ای ثبت نشده است.</div>
+              <div class="empty-state">برای این تیپ فرم هنوز داده‌ای ثبت نشده است.</div>
             {% else %}
               <div class="prog-chart" role="img" aria-label="نمودار هدف و تحقق">
                 {% for r in ch.rows %}
@@ -70,9 +70,8 @@
               </div>
             {% endif %}
 
-          </div>
         </div>
-      </div>
+      </details>
     {% endfor %}
   </div>
 {% endif %}

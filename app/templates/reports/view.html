@@ -22,7 +22,7 @@
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
               <button class="btn btn-sm btn-outline-primary" type="button" onclick="saveMeta()">
-                <i class="bi bi-check2-circle me-1"></i>
+                <i data-lucide="circle-check"></i>
                 ذخیره عنوان
               </button>
               <span id="metaSaveState" class="text-muted small">&nbsp;</span>
@@ -40,31 +40,31 @@
           </div>
 
           <div class="report-stepper mt-3" id="reportStepper">
-            <div class="report-step" data-step="meta"><i class="bi bi-ui-checks"></i> عنوان</div>
-            <div class="report-step" data-step="intro"><i class="bi bi-card-text"></i> مقدمه</div>
-            <div class="report-step" data-step="sections"><i class="bi bi-table"></i> فرم‌ها</div>
-            <div class="report-step" data-step="conclusion"><i class="bi bi-flag"></i> نتیجه‌گیری</div>
+            <div class="report-step" data-step="meta"><i data-lucide="clipboard-list"></i> عنوان</div>
+            <div class="report-step" data-step="intro"><i data-lucide="file-text"></i> مقدمه</div>
+            <div class="report-step" data-step="sections"><i data-lucide="table-2"></i> فرم‌ها</div>
+            <div class="report-step" data-step="conclusion"><i data-lucide="flag"></i> نتیجه‌گیری</div>
           </div>
         </div>
 
         <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
-          <a class="btn btn-outline-secondary btn-sm" href="/reports"><i class="bi bi-arrow-right me-1"></i>بازگشت</a>
+          <a class="btn btn-outline-secondary btn-sm" href="/reports"><i data-lucide="arrow-right"></i>بازگشت</a>
           <a
             id="downloadPdfBtn"
             class="btn btn-outline-primary btn-sm"
             href="/reports/{{ report.id }}/pdf"
             onclick="return handlePdfButtonClick(event);">
-            <i class="bi bi-file-earmark-pdf me-1"></i>دانلود PDF
+            <i data-lucide="file-text"></i>دانلود PDF
           </a>
           {% if user.role.value == 'secretariat_admin' %}
-            <a class="btn btn-outline-secondary btn-sm" href="/report-template"><i class="bi bi-brush me-1"></i>قالب PDF</a>
+            <a class="btn btn-outline-secondary btn-sm" href="/report-template"><i data-lucide="brush"></i>قالب PDF</a>
           {% endif %}
           {% if can_edit %}
-            <button class="btn btn-primary btn-sm" type="button" onclick="saveAll()"><i class="bi bi-cloud-check me-1"></i>ذخیره همه</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="saveAll()"><i data-lucide="cloud-check"></i>ذخیره همه</button>
           {% endif %}
           {% if user.role.value in ['org_county_expert','org_prov_expert'] and report.current_owner_id == user.id and report.status.value != 'final_approved' %}
             <form method="post" action="/reports/{{ report.id }}/delete" onsubmit="return confirm('این گزارش حذف می‌شود. ادامه می‌دهید؟')" class="m-0">
-              <button class="btn btn-outline-danger btn-sm" type="submit"><i class="bi bi-trash me-1"></i>حذف</button>
+              <button class="btn btn-outline-danger btn-sm" type="submit"><i data-lucide="trash-2"></i>حذف</button>
             </form>
           {% endif %}
         </div>
@@ -110,7 +110,7 @@
         <div class="dropzone mt-3" id="reportDropzone" tabindex="0">
           <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2">
             <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-cloud-arrow-up fs-4"></i>
+              <i data-lucide="cloud-upload"></i>
               <div>
                 <div class="fw-semibold">آپلود فایل</div>
                 <div class="text-muted small">فایل را اینجا رها کن یا انتخاب کن. پس از آپلود، در بخش «پیوست‌های گزارش» نمایش داده می‌شود.</div>
@@ -149,7 +149,7 @@
           {% endif %}
         </div>
         {% if can_edit %}
-          <button class="btn btn-sm btn-outline-primary" type="button" onclick="toggleAllSections()"><i class="bi bi-arrows-collapse me-1"></i>جمع/باز</button>
+          <button class="btn btn-sm btn-outline-primary" type="button" onclick="toggleAllSections()"><i data-lucide="minimize-2"></i>جمع/باز</button>
         {% endif %}
       </div>
 
@@ -215,7 +215,7 @@
               {% endif %}
             </div>
             <div class="col-md-2">
-              <button type="submit" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-plus-circle me-1"></i>افزودن خروجی</button>
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100"><i data-lucide="circle-plus"></i>افزودن خروجی</button>
             </div>
           </form>
         {% else %}
@@ -275,10 +275,8 @@
         <button
           class="btn btn-sm btn-outline-primary"
           type="button"
-          data-bs-toggle="modal"
-          data-bs-target="#workflowFlowModal"
-          onclick="openWorkflowFlowModal()">
-          <i class="bi bi-diagram-3 me-1"></i>نمایش فلوچارت
+          onclick="openWorkflowFlowModal(); openUiModal('workflowFlowModal');">
+          <i data-lucide="workflow"></i>نمایش فلوچارت
         </button>
       </div>
       <div class="table-responsive">
@@ -299,14 +297,15 @@
       </div>
     </div>
 
-    <div class="modal fade" id="workflowFlowModal" tabindex="-1" aria-labelledby="workflowFlowModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
+    <div class="ui-modal" id="workflowFlowModal" aria-labelledby="workflowFlowModalLabel" aria-hidden="true" role="dialog">
+      <div class="ui-modal-backdrop" data-modal-close="workflowFlowModal"></div>
+      <div class="ui-modal-dialog ui-modal-xl">
+        <div class="ui-modal-content">
+          <div class="ui-modal-header">
             <h5 class="modal-title" id="workflowFlowModalLabel">فلوچارت گردش‌کار گزارش</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button type="button" class="icon-btn" data-modal-close="workflowFlowModal" aria-label="بستن"><i data-lucide="x"></i></button>
           </div>
-          <div class="modal-body">
+          <div class="ui-modal-body">
             <div id="workflowFlowDiagram" class="border rounded-3 bg-light-subtle" style="height: 62vh; min-height: 420px;"></div>
             <div id="workflowFlowHint" class="text-muted small mt-2"></div>
           </div>
@@ -314,19 +313,20 @@
       </div>
     </div>
 
-    <div class="modal fade" id="reportPdfModal" tabindex="-1" aria-labelledby="reportPdfModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
+    <div class="ui-modal" id="reportPdfModal" aria-labelledby="reportPdfModalLabel" aria-hidden="true" role="dialog">
+      <div class="ui-modal-backdrop" data-modal-close="reportPdfModal"></div>
+      <div class="ui-modal-dialog ui-modal-xl ui-modal-scroll">
+        <div class="ui-modal-content">
+          <div class="ui-modal-header">
             <h5 class="modal-title" id="reportPdfModalLabel">پیش‌نمایش PDF گزارش</h5>
             <div class="d-flex align-items-center gap-2 ms-auto">
               <button id="reportPdfModalDownloadBtn" type="button" class="btn btn-sm btn-primary" onclick="downloadModalPdf()">
-                <i class="bi bi-download me-1"></i>دانلود PDF
+                <i data-lucide="download"></i>دانلود PDF
               </button>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              <button type="button" class="icon-btn" data-modal-close="reportPdfModal" aria-label="بستن"><i data-lucide="x"></i></button>
             </div>
           </div>
-          <div class="modal-body p-0">
+          <div class="ui-modal-body p-0">
             <iframe
               id="reportPdfModalFrame"
               title="PDF Preview"
@@ -404,24 +404,12 @@
   style="position: fixed; inset-inline-start: -20000px; top: 0; width: 794px; opacity: 1; pointer-events: none; z-index: -1;">
 </div>
 
-<script
-  src="{{ url_for('static', path='/js/ckeditor5-build-classic/ckeditor.js') }}"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@44.3.0/build/ckeditor.js';">
-</script>
-<script
-  src="{{ url_for('static', path='/js/ckeditor5-build-classic/fa.js') }}"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@ckeditor/ckeditor5-build-classic@44.3.0/build/translations/fa.js';">
-</script>
+<script src="{{ url_for('static', path='/js/ckeditor5-build-classic/ckeditor.js') }}"></script>
+<script src="{{ url_for('static', path='/js/ckeditor5-build-classic/fa.js') }}"></script>
 <script src="{{ url_for('static', path='/js/gojs_3.1.5.js') }}"></script>
 <script src="{{ url_for('static', path='/js/Sortable.min.js') }}"></script>
-<script
-  src="{{ url_for('static', path='/js/html2canvas.min.js') }}"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';">
-</script>
-<script
-  src="{{ url_for('static', path='/js/jspdf.umd.min.js') }}"
-  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';">
-</script>
+<script src="{{ url_for('static', path='/js/html2canvas.min.js') }}"></script>
+<script src="{{ url_for('static', path='/js/jspdf.umd.min.js') }}"></script>
 
 <script>
 let rteIntro = null;
@@ -1056,14 +1044,8 @@ function openPdfModal(dataUri){
   if(frame){
     frame.src = dataUri || "";
   }
-  if(!reportPdfModal){
-    const modalEl = document.getElementById("reportPdfModal");
-    if(modalEl && window.bootstrap && window.bootstrap.Modal){
-      reportPdfModal = new window.bootstrap.Modal(modalEl);
-    }
-  }
-  if(reportPdfModal){
-    reportPdfModal.show();
+  if(window.openUiModal){
+    window.openUiModal("reportPdfModal");
   }
 }
 
@@ -1982,14 +1964,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   const flowModal = document.getElementById('workflowFlowModal');
   if(flowModal){
-    flowModal.addEventListener('shown.bs.modal', ()=>{
+    flowModal.addEventListener('ui-modal:shown', ()=>{
       renderWorkflowFlowDiagram();
     });
   }
 
   const pdfModalEl = document.getElementById("reportPdfModal");
   if(pdfModalEl){
-    pdfModalEl.addEventListener("hidden.bs.modal", ()=>{
+    pdfModalEl.addEventListener("ui-modal:hidden", ()=>{
       const frame = document.getElementById("reportPdfModalFrame");
       if(frame){
         frame.src = "about:blank";
