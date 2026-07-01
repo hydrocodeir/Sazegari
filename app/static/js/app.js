@@ -902,6 +902,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
   refreshLucideIcons(document);
   initMobileSidebar();
   initModalControls(document);
+  initEnterpriseShell();
+  initWorkflowFilters(document);
   startRealtimeSessionMonitor();
 });
 
@@ -1073,6 +1075,110 @@ document.addEventListener("DOMContentLoaded", ()=>{
 document.body.addEventListener("htmx:afterSwap", (e)=>{
   initPaginatedTables(e.target || document);
   initTableFilters(document);
+  initWorkflowFilters(e.target || document);
   refreshLucideIcons(e.target || document);
   initModalControls(e.target || document);
 });
+
+// ----------------------------
+// Enterprise workflow shell
+// ----------------------------
+function initEnterpriseShell(){
+  const collapseBtn = document.querySelector("[data-sidebar-collapse]");
+  if(collapseBtn && collapseBtn.dataset.bound !== "1"){
+    collapseBtn.dataset.bound = "1";
+    const saved = localStorage.getItem("sazegari.sidebarCollapsed");
+    if(saved === "1") document.body.classList.add("sidebar-collapsed");
+    collapseBtn.addEventListener("click", ()=>{
+      document.body.classList.toggle("sidebar-collapsed");
+      localStorage.setItem("sazegari.sidebarCollapsed", document.body.classList.contains("sidebar-collapsed") ? "1" : "0");
+      refreshLucideIcons(document);
+    });
+  }
+
+  const palette = document.getElementById("commandPalette");
+  const input = document.getElementById("commandInput");
+  const triggers = document.querySelectorAll(".command-trigger, .topbar-search input");
+  const closeEls = document.querySelectorAll("[data-command-close]");
+
+  function openPalette(){
+    if(!palette) return;
+    palette.classList.add("show");
+    palette.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    refreshLucideIcons(palette);
+    setTimeout(()=>input?.focus(), 30);
+  }
+
+  function closePalette(){
+    if(!palette) return;
+    palette.classList.remove("show");
+    palette.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+  }
+
+  triggers.forEach(el=>{
+    if(el.dataset.commandBound === "1") return;
+    el.dataset.commandBound = "1";
+    el.addEventListener("focus", openPalette);
+    el.addEventListener("click", openPalette);
+  });
+
+  closeEls.forEach(el=>{
+    if(el.dataset.commandCloseBound === "1") return;
+    el.dataset.commandCloseBound = "1";
+    el.addEventListener("click", closePalette);
+  });
+
+  document.addEventListener("keydown", (e)=>{
+    const key = (e.key || "").toLowerCase();
+    if((e.ctrlKey || e.metaKey) && key === "k"){
+      e.preventDefault();
+      openPalette();
+    }
+    if(key === "escape"){
+      closePalette();
+    }
+  });
+
+  if(input && input.dataset.bound !== "1"){
+    input.dataset.bound = "1";
+    input.addEventListener("input", ()=>{
+      const q = (input.value || "").trim().toLowerCase();
+      document.querySelectorAll(".command-list a").forEach(a=>{
+        a.style.display = !q || (a.textContent || "").toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+  }
+}
+
+function initWorkflowFilters(root=document){
+  const scope = root || document;
+  scope.querySelectorAll("[data-status-filter]").forEach(btn=>{
+    if(btn.dataset.workflowFilterBound === "1") return;
+    btn.dataset.workflowFilterBound = "1";
+    btn.addEventListener("click", ()=>{
+      const status = btn.getAttribute("data-status-filter") || "";
+      const table = document.getElementById("reportsTable");
+      const cards = document.querySelectorAll(".mobile-report-card");
+
+      document.querySelectorAll("[data-status-filter]").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+
+      if(table){
+        const rows = Array.from(table.querySelectorAll("tbody tr"));
+        rows.forEach(row=>{
+          row.style.display = (!status || row.getAttribute("data-status") === status) ? "" : "none";
+        });
+        if(typeof table._renderPager === "function"){
+          table.dataset.filter = "";
+          table._renderPager();
+        }
+      }
+
+      cards.forEach(card=>{
+        card.style.display = (!status || card.getAttribute("data-status") === status) ? "" : "none";
+      });
+    });
+  });
+}

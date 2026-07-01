@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="ReportRoutingDefinitions" name="Report routing decisions" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="route_report_review" name="Route report review">
+    <decisionTable id="DecisionTable_RouteReportReview" hitPolicy="UNIQUE">
+      <input id="Input_ReportKind" label="Report kind">
+        <inputExpression id="InputExpression_ReportKind" typeRef="string">
+          <text>reportKind</text>
+        </inputExpression>
+      </input>
+      <input id="Input_DraftComplete" label="Draft complete">
+        <inputExpression id="InputExpression_DraftComplete" typeRef="boolean">
+          <text>draftComplete</text>
+        </inputExpression>
+      </input>
+      <output id="Output_NextStep" label="Next step" name="nextStep" typeRef="string" />
+      <output id="Output_CandidateGroup" label="Candidate group" name="candidateGroup" typeRef="string" />
+      <output id="Output_SlaHours" label="SLA hours" name="slaHours" typeRef="number" />
+      <rule id="Rule_County_Report">
+        <inputEntry id="InputEntry_County_ReportKind"><text>"county"</text></inputEntry>
+        <inputEntry id="InputEntry_County_DraftComplete"><text>true</text></inputEntry>
+        <outputEntry id="OutputEntry_County_NextStep"><text>"county_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_County_Group"><text>"org_county_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_County_Sla"><text>48</text></outputEntry>
+      </rule>
+      <rule id="Rule_Provincial_Report">
+        <inputEntry id="InputEntry_Provincial_ReportKind"><text>"provincial"</text></inputEntry>
+        <inputEntry id="InputEntry_Provincial_DraftComplete"><text>true</text></inputEntry>
+        <outputEntry id="OutputEntry_Provincial_NextStep"><text>"province_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_Provincial_Group"><text>"org_prov_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_Provincial_Sla"><text>48</text></outputEntry>
+      </rule>
+      <rule id="Rule_Incomplete_Draft">
+        <inputEntry id="InputEntry_Incomplete_ReportKind"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Incomplete_DraftComplete"><text>false</text></inputEntry>
+        <outputEntry id="OutputEntry_Incomplete_NextStep"><text>"draft"</text></outputEntry>
+        <outputEntry id="OutputEntry_Incomplete_Group"><text>"author"</text></outputEntry>
+        <outputEntry id="OutputEntry_Incomplete_Sla"><text>72</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

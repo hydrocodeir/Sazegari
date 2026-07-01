@@ -1,58 +1,160 @@
 {% extends "base.html" %}
+{% block page_title %}
+  {% if view_mode == 'archive' %}آرشیو و جستجو{% elif view_mode == 'tracking' %}رهگیری گردش‌کار{% elif view_mode == 'inbox' %}کارهای من{% else %}گزارش‌ها و کارها{% endif %}
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="m-0">گزارش‌ها</h1>
-  {% if badge_count and badge_count>0 %}
-    <span class="badge text-bg-danger">کارهای در انتظار شما: {{ badge_count }}</span>
-  {% endif %}
-</div>
-
-<div class="card p-3 mb-3">
-  <h5 class="mb-2">ایجاد گزارش جدید</h5>
-  {% if user.role.value == 'org_county_expert' %}
-    <div class="text-muted small mb-3">
-      ابتدا متن/پیوست‌های اولیه را اضافه کن، سپس هر تعداد «فرم» را به گزارش متصل کن و برای هر فرم توضیح بنویس؛ در پایان نتیجه‌گیری را ثبت و گزارش را ارسال کن.
+{% set inbox_mode = view_mode == 'inbox' %}
+{% set archive_mode = view_mode == 'archive' %}
+{% set tracking_mode = view_mode == 'tracking' %}
+<div class="page-grid reports-workspace">
+  <section class="workspace-hero">
+    <div>
+      <div class="breadcrumb-line">گردش‌کار / {% if archive_mode %}آرشیو{% elif tracking_mode %}رهگیری{% elif inbox_mode %}کارهای من{% else %}گزارش‌ها{% endif %}</div>
+      <h1>{% if archive_mode %}آرشیو و جستجوی گزارش‌ها{% elif tracking_mode %}رهگیری گردش‌کار{% elif inbox_mode %}Inbox کاری{% else %}رجیستری گزارش‌ها{% endif %}</h1>
+      <p>{% if archive_mode %}گزارش‌های نهایی‌شده برای جستجو، ممیزی و ارجاع سازمانی.{% elif tracking_mode %}نمای وضعیت، مرحله، مسئول و SLA برای پرونده‌های در گردش.{% else %}فهرست گزارش‌ها به وضعیت BPM، مسئول فعلی، مرحله Camunda و اقدام بعدی متصل است.{% endif %}</p>
     </div>
-    <form method="post" action="/reports">
-      <button type="submit" class="btn btn-primary">
-        <i data-lucide="circle-plus"></i>
-        ایجاد گزارش جدید
-      </button>
-    </form>
-  {% elif user.role.value == 'org_prov_expert' %}
-    <div class="text-muted small mb-3">
-      پس از نهایی شدن گزارش‌های شهرستان‌های ارگان، گزارش جامع استانی را اینجا ایجاد کنید.
+    <div class="hero-actions">
+      <a class="btn btn-outline-secondary" href="/reports?view=inbox"><i data-lucide="inbox"></i>کارهای من</a>
+      <a class="btn btn-outline-secondary" href="/reports?view=tracking"><i data-lucide="workflow"></i>رهگیری</a>
+      <a class="btn btn-outline-secondary" href="/reports?view=archive"><i data-lucide="archive"></i>آرشیو</a>
+      <a class="btn btn-outline-secondary" href="/reports"><i data-lucide="files"></i>همه گزارش‌ها</a>
     </div>
-    <form method="post" action="/reports?kind=provincial">
-      <button type="submit" class="btn btn-primary">
-        <i data-lucide="circle-plus"></i>
-        ایجاد گزارش جامع استانی
-      </button>
-    </form>
-  {% else %}
-    <div class="text-muted small">ایجاد گزارش فقط برای «کارشناس شهرستان» و «کارشناس استان» فعال است.</div>
-  {% endif %}
-</div>
+  </section>
 
-<div class="card p-3">
-  <h5>لیست گزارش‌ها</h5>
-  <div class="table-responsive">
-    <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
-      <thead><tr><th>#</th><th>نوع</th><th>ارگان</th><th>شهرستان</th><th>وضعیت</th><th>مالک</th><th></th></tr></thead>
-      <tbody>
-        {% for r in reports %}
+  <section class="kpi-grid">
+    <article class="metric-card compact">
+      <span class="metric-label">پیش‌نویس</span>
+      <strong>{{ status_counts.get('draft', 0) }}</strong>
+    </article>
+    <article class="metric-card compact">
+      <span class="metric-label">در بررسی</span>
+      <strong>{{ status_counts.get('county_manager_review', 0) + status_counts.get('prov_expert_review', 0) + status_counts.get('prov_manager_review', 0) + status_counts.get('secretariat_user_review', 0) + status_counts.get('secretariat_admin_review', 0) }}</strong>
+    </article>
+    <article class="metric-card compact metric-warning">
+      <span class="metric-label">برگشتی</span>
+      <strong>{{ status_counts.get('needs_revision', 0) }}</strong>
+    </article>
+    <article class="metric-card compact metric-success">
+      <span class="metric-label">تایید نهایی</span>
+      <strong>{{ status_counts.get('final_approved', 0) }}</strong>
+    </article>
+  </section>
+
+  <section class="ops-panel create-report-panel">
+    <div class="panel-head">
+      <div>
+        <h2>ایجاد گزارش</h2>
+        <p>فرآیند ایجاد گزارش به فرم شروع Camunda و وضعیت Draft متناظر است.</p>
+      </div>
+    </div>
+    <div class="wizard-preview">
+      <div class="wizard-step active"><span>۱</span><strong>نوع گزارش</strong><small>شهرستانی یا استانی</small></div>
+      <div class="wizard-step"><span>۲</span><strong>محتوا و پیوست</strong><small>ذخیره خودکار پیش‌نویس</small></div>
+      <div class="wizard-step"><span>۳</span><strong>بازبینی</strong><small>کنترل قبل از ارسال</small></div>
+      <div class="wizard-step"><span>۴</span><strong>ارسال</strong><small>Tasklist بعدی</small></div>
+    </div>
+
+    <div class="create-actions">
+      {% if user.role.value == 'org_county_expert' %}
+        <form method="post" action="/reports">
+          <button type="submit" class="btn btn-primary"><i data-lucide="file-plus-2"></i>ایجاد گزارش شهرستانی</button>
+        </form>
+      {% elif user.role.value == 'org_prov_expert' %}
+        <form method="post" action="/reports?kind=provincial">
+          <button type="submit" class="btn btn-primary"><i data-lucide="file-plus-2"></i>ایجاد گزارش جامع استانی</button>
+        </form>
+      {% else %}
+        <div class="empty-inline"><i data-lucide="lock-keyhole"></i>ایجاد گزارش برای نقش فعلی فعال نیست؛ شما می‌توانید بررسی، رهگیری یا آرشیو را انجام دهید.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="ops-panel">
+    <div class="table-toolbar workflow-toolbar">
+      <div class="saved-views" role="tablist" aria-label="نمای ذخیره‌شده">
+        <a class="saved-view {% if inbox_mode %}active{% endif %}" href="/reports?view=inbox"><i data-lucide="inbox"></i>کارهای من</a>
+        <a class="saved-view {% if tracking_mode %}active{% endif %}" href="/reports?view=tracking"><i data-lucide="workflow"></i>رهگیری</a>
+        <a class="saved-view {% if archive_mode %}active{% endif %}" href="/reports?view=archive"><i data-lucide="archive"></i>آرشیو</a>
+        <a class="saved-view {% if not inbox_mode and not archive_mode and not tracking_mode %}active{% endif %}" href="/reports"><i data-lucide="rows-3"></i>همه</a>
+        <button class="saved-view" type="button" data-status-filter="needs_revision"><i data-lucide="undo-2"></i>برگشتی</button>
+        <button class="saved-view" type="button" data-status-filter="final_approved"><i data-lucide="archive"></i>آرشیو</button>
+      </div>
+      <div class="toolbar-search">
+        <i data-lucide="search"></i>
+        <input data-table-filter="#reportsTable" class="form-control form-control-sm" placeholder="جستجو بر اساس شماره، ارگان، وضعیت یا مسئول">
+      </div>
+    </div>
+
+    <div class="table-responsive enterprise-table">
+      <table class="table align-middle" id="reportsTable" data-paginate="true" data-page-size="10">
+        <thead>
           <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.kind_label }}</td>
-            <td>{{ r.org.name if r.org else r.org_id }}</td>
-            <td>{{ r.county.name if r.county else '-' }}</td>
-            <td><span class="badge text-bg-secondary">{{ r.status_label }}</span></td>
-            <td>{{ (owner_names|default({})).get(r.current_owner_id, r.current_owner_id) }}</td>
-            <td><a class="btn btn-sm btn-outline-primary" href="/reports/{{ r.id }}">باز کردن</a></td>
+            <th>گزارش</th>
+            <th>حوزه</th>
+            <th>وضعیت</th>
+            <th>مرحله BPM</th>
+            <th>مسئول فعلی</th>
+            <th>SLA</th>
+            <th>آخرین فعالیت</th>
+            <th></th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+          {% for r in reports %}
+            {% if not inbox_mode or r.current_owner_id == user.id %}
+              {% set stage = workflow_stage(r.status) %}
+              <tr data-status="{{ r.status.value }}" class="report-row">
+                <td>
+                  <div class="record-cell">
+                    <strong>#{{ r.id }} - {{ r.kind_label }}</strong>
+                    <small>{{ r.org.name if r.org else r.org_id }}</small>
+                  </div>
+                </td>
+                <td>{{ r.county.name if r.county else 'استان' }}</td>
+                <td><span class="badge badge-status status-{{ status_tone(r.status) }}">{{ r.status_label }}</span></td>
+                <td>
+                  <div class="record-cell">
+                    <strong>{{ stage.label if stage else r.status.value }}</strong>
+                    <small>{{ stage.camunda_task_id if stage else 'LegacyState' }}</small>
+                  </div>
+                </td>
+                <td>{{ owner_names.get(r.current_owner_id, r.current_owner_id) if r.current_owner_id else '-' }}</td>
+                <td>
+                  {% if stage and stage.sla_hours %}
+                    <span class="sla-pill"><i data-lucide="clock-3"></i>{{ stage.sla_hours }}h</span>
+                  {% else %}
+                    <span class="sla-pill done"><i data-lucide="check"></i>پایان</span>
+                  {% endif %}
+                </td>
+                <td><span class="muted">WorkflowLog</span></td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-primary" href="/reports/{{ r.id }}"><i data-lucide="panel-left-open"></i>باز کردن</a>
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="report-card-list">
+      {% for r in reports %}
+        {% if not inbox_mode or r.current_owner_id == user.id %}
+          {% set stage = workflow_stage(r.status) %}
+          <a class="mobile-report-card" href="/reports/{{ r.id }}" data-status="{{ r.status.value }}">
+            <div>
+              <strong>#{{ r.id }} - {{ r.kind_label }}</strong>
+              <span>{{ r.org.name if r.org else r.org_id }} / {{ r.county.name if r.county else 'استان' }}</span>
+            </div>
+            <span class="badge badge-status status-{{ status_tone(r.status) }}">{{ r.status_label }}</span>
+            <small>{{ stage.label if stage else r.status.value }} · {{ owner_names.get(r.current_owner_id, r.current_owner_id) if r.current_owner_id else '-' }}</small>
+          </a>
+        {% endif %}
+      {% else %}
+        <div class="empty-state">گزارشی برای نمایش وجود ندارد.</div>
+      {% endfor %}
+    </div>
+  </section>
 </div>
 {% endblock %}

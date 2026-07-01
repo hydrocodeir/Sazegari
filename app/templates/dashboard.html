@@ -1,116 +1,158 @@
 {% extends "base.html" %}
-{% block page_title %}داشبورد{% endblock %}
+{% block page_title %}داشبورد عملیات{% endblock %}
 
 {% block content %}
-<div class="dashboard-page">
-  <div class="dashboard-heading">
+<div class="page-grid dashboard-workspace">
+  <section class="workspace-hero">
     <div>
-      <div class="dashboard-breadcrumb">صفحات / داشبورد</div>
-      <h1>داشبورد</h1>
-      <p>سلام {{ user.full_name or user.username }}، وضعیت کارها و شاخص‌های اصلی سامانه را اینجا دنبال کنید.</p>
+      <div class="breadcrumb-line">داشبورد / مرکز فرمان گردش‌کار</div>
+      <h1>مرکز عملیات گزارش‌ها</h1>
+      <p>سلام {{ user.full_name or user.username }}، وضعیت کارهای امروز، گلوگاه‌ها و گزارش‌های در جریان اینجاست.</p>
     </div>
-    <div class="dashboard-actions">
+    <div class="hero-actions">
       {% if user and can_submit_data(user) %}
-        <a class="btn btn-primary" href="/submissions"><i data-lucide="circle-plus"></i>ثبت داده</a>
+        <a class="btn btn-outline-secondary" href="/submissions"><i data-lucide="clipboard-check"></i>ثبت داده</a>
       {% endif %}
-      <a class="btn btn-outline-secondary" href="/reports"><i data-lucide="file-text"></i>گزارش‌ها</a>
+      {% if user and can_create_report(user) %}
+        <a class="btn btn-primary" href="/reports"><i data-lucide="file-plus-2"></i>ایجاد گزارش</a>
+      {% endif %}
     </div>
-  </div>
+  </section>
 
-  <div class="dashboard-kpis">
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">اعلان‌های خوانده‌نشده</div>
-        <div class="kpi-value">{{ kpi.unread_notifications }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="bell"></i></div>
-      <div class="kpi-footer"><span class="positive">+{{ kpi.unread_notifications }}</span> نیازمند توجه</div>
-    </div>
+  <section class="kpi-grid kpi-grid-5">
+    <article class="metric-card">
+      <span class="metric-label">کارهای در صف شما</span>
+      <strong>{{ kpi.my_queue }}</strong>
+      <div class="metric-trend"><i data-lucide="inbox"></i> نیازمند اقدام مستقیم</div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">در حال بررسی</span>
+      <strong>{{ kpi.pending_reports }}</strong>
+      <div class="metric-trend"><i data-lucide="timer"></i> مسیرهای فعال BPM</div>
+    </article>
+    <article class="metric-card metric-warning">
+      <span class="metric-label">برگشتی / ریسک SLA</span>
+      <strong>{{ kpi.sla_risk }}</strong>
+      <div class="metric-trend"><i data-lucide="triangle-alert"></i> نیازمند پیگیری</div>
+    </article>
+    <article class="metric-card metric-success">
+      <span class="metric-label">تایید نهایی</span>
+      <strong>{{ kpi.approved_reports }}</strong>
+      <div class="metric-trend"><i data-lucide="badge-check"></i> آماده آرشیو</div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">ثبت داده‌ها</span>
+      <strong>{{ kpi.total_submissions }}</strong>
+      <div class="metric-trend"><i data-lucide="database"></i> منبع گزارش‌سازی</div>
+    </article>
+  </section>
 
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">گزارش‌های در صف شما</div>
-        <div class="kpi-value">{{ kpi.my_queue }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="inbox"></i></div>
-      <div class="kpi-footer"><span class="neutral">{{ kpi.my_queue }}</span> مورد در جریان</div>
-    </div>
-
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">کل گزارش‌ها</div>
-        <div class="kpi-value">{{ kpi.total_reports }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="files"></i></div>
-      <div class="kpi-footer"><span class="positive">فعال</span> در محدوده شما</div>
-    </div>
-
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">ثبت داده‌ها</div>
-        <div class="kpi-value">{{ kpi.total_submissions }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="clipboard-list"></i></div>
-      <div class="kpi-footer"><span class="positive">به‌روز</span> در محدوده شما</div>
-    </div>
-  </div>
-
-  <div class="dashboard-charts">
-    <section class="chart-card">
-      <div class="chart-head">
+  <div class="analytics-grid">
+    <section class="ops-panel">
+      <div class="panel-head">
         <div>
-          <h2>نمای کلی فعالیت</h2>
-          <p>عملکرد هفتگی ثبت و گزارش</p>
+          <h2>خلاصه وضعیت گردش‌کار</h2>
+          <p>هر وضعیت با یک مرحله BPMN و یک گروه مسئول متناظر است.</p>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="/reports"><i data-lucide="list-filter"></i>مشاهده همه</a>
+      </div>
+      <div class="status-stack">
+        {% for stage in WORKFLOW_STAGES %}
+          {% set count = dashboard_model.status_counts.get(stage.status.value, 0) %}
+          {% set width = (count / (kpi.total_reports if kpi.total_reports else 1) * 100) | round(0, 'floor') %}
+          <div class="status-row">
+            <div class="status-row-label">
+              <span class="status-dot status-{{ stage.tone }}"></span>
+              <strong>{{ stage.label }}</strong>
+              <em>{{ stage.sla_hours }} ساعت SLA</em>
+            </div>
+            <div class="status-meter" aria-label="{{ stage.label }}: {{ count }}">
+              <span class="status-meter-fill tone-{{ stage.tone }}" style="width: {{ width }}%"></span>
+            </div>
+            <b>{{ count }}</b>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="ops-panel">
+      <div class="panel-head">
+        <div>
+          <h2>گلوگاه‌های سازمانی</h2>
+          <p>نمای فشرده برای مدیران و ناظران.</p>
         </div>
       </div>
-      <div class="bar-chart" aria-hidden="true">
-        <span style="height: 48%"></span>
-        <span style="height: 42%"></span>
-        <span style="height: 22%"></span>
-        <span style="height: 29%"></span>
-        <span style="height: 50%"></span>
-        <span style="height: 62%"></span>
-        <span style="height: 78%"></span>
+      <div class="bottleneck-list">
+        {% for status, count in dashboard_model.review_by_status.items() %}
+          {% if count > 0 %}
+            {% set tone = status_tone(status) if status is not string else status_tone(status) %}
+            <div class="bottleneck-item">
+              <span class="badge badge-status status-{{ tone }}">{{ status }}</span>
+              <strong>{{ count }}</strong>
+              <small>پرونده فعال</small>
+            </div>
+          {% endif %}
+        {% endfor %}
+        {% if dashboard_model.review_by_status|length == 0 %}
+          <div class="empty-state">در حال حاضر گلوگاه فعالی ثبت نشده است.</div>
+        {% endif %}
       </div>
-      <div class="chart-axis"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div>
-      <div class="chart-foot"><i data-lucide="clock-3"></i> آخرین به‌روزرسانی امروز</div>
-    </section>
-
-    <section class="chart-card chart-card-wide">
-      <div class="chart-head">
-        <div>
-          <h2>روند گزارش‌ها</h2>
-          <p>نمای ساده از تغییرات وضعیت در ماه‌های اخیر</p>
-        </div>
-      </div>
-      <div class="line-chart" aria-hidden="true">
-        <svg viewBox="0 0 640 220" preserveAspectRatio="none">
-          <path class="grid-line" d="M0 45 H640 M0 95 H640 M0 145 H640 M0 195 H640" />
-          <path class="line-fill" d="M0 168 L70 132 L140 150 L210 84 L280 122 L350 102 L420 144 L490 72 L560 116 L640 86 L640 220 L0 220 Z" />
-          <path class="line-main" d="M0 168 L70 132 L140 150 L210 84 L280 122 L350 102 L420 144 L490 72 L560 116 L640 86" />
-        </svg>
-      </div>
-      <div class="chart-foot"><i data-lucide="clock-3"></i> پایش مستمر گردش‌کار</div>
     </section>
   </div>
 
-  <section class="quick-panel">
-    <div class="chart-head">
-      <div>
-        <h2>دسترسی سریع</h2>
-        <p>مسیرهای اصلی برای انجام کارهای پرتکرار</p>
+  <div class="dashboard-columns">
+    <section class="ops-panel">
+      <div class="panel-head">
+        <div>
+          <h2>آخرین گزارش‌ها</h2>
+          <p>آخرین پرونده‌های قابل مشاهده در محدوده نقش شما.</p>
+        </div>
       </div>
-    </div>
-    <div class="quick-grid">
-      {% if user and can_submit_data(user) %}
-        <a class="quick-link" href="/submissions"><i data-lucide="clipboard-check"></i><span>ثبت داده</span></a>
-      {% endif %}
-      <a class="quick-link" href="/reports"><i data-lucide="file-text"></i><span>گزارش‌ها</span></a>
-      <a class="quick-link" href="/notifications"><i data-lucide="bell"></i><span>اعلان‌ها</span></a>
-      {% if user.role.value.startswith("secretariat") %}
-        <a class="quick-link" href="/forms"><i data-lucide="list-checks"></i><span>فرم‌ها</span></a>
-      {% endif %}
-    </div>
+      <div class="object-list">
+        {% for report in dashboard_model.recent_reports %}
+          <a class="object-row" href="/reports/{{ report.id }}">
+            <div class="object-main">
+              <span class="object-title">گزارش #{{ report.id }} - {{ report.kind_label }}</span>
+              <small>{{ report.org.name if report.org else report.org_id }}{% if report.county %} / {{ report.county.name }}{% endif %}</small>
+            </div>
+            <span class="badge badge-status status-{{ status_tone(report.status) }}">{{ report.status_label }}</span>
+          </a>
+        {% else %}
+          <div class="empty-state">هنوز گزارشی در محدوده شما وجود ندارد.</div>
+        {% endfor %}
+      </div>
     </section>
+
+    <section class="ops-panel">
+      <div class="panel-head">
+        <div>
+          <h2>فعالیت اخیر</h2>
+          <p>رویدادهای WorkflowLog برای ردگیری و ممیزی.</p>
+        </div>
+      </div>
+      <div class="timeline-list">
+        {% for log in dashboard_model.recent_logs %}
+          <div class="timeline-item">
+            <span class="timeline-pin"></span>
+            <div>
+              <strong>{{ ACTION_META.get(log.action, {}).get("label", log.action) }}</strong>
+              <small>گزارش #{{ log.report_id }} از {{ log.from_status }} به {{ log.to_status }}</small>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty-state">هنوز فعالیتی ثبت نشده است.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <section class="quick-action-grid">
+    <a class="quick-action" href="/reports?view=inbox"><i data-lucide="inbox"></i><strong>Inbox</strong><span>اقدام روی کارهای محول‌شده</span></a>
+    <a class="quick-action" href="/reports"><i data-lucide="files"></i><strong>گزارش‌ها</strong><span>فیلتر، جستجو و رهگیری</span></a>
+    <a class="quick-action" href="/notifications"><i data-lucide="bell"></i><strong>اعلان‌ها</strong><span>{{ kpi.unread_notifications }} اعلان خوانده‌نشده</span></a>
+    {% if user.role.value.startswith("secretariat") %}
+      <a class="quick-action" href="/audit"><i data-lucide="notebook-text"></i><strong>لاگ ممیزی</strong><span>رد پای اقدامات و فرم‌ها</span></a>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

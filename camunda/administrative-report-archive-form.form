@@ -1,0 +1,79 @@
+{
+  "components": [
+    {
+      "type": "textfield",
+      "id": "Field_archiveReference",
+      "key": "archiveReference",
+      "label": "Archive reference",
+      "description": "Official archive code for the finalized report.",
+      "validate": {
+        "required": true,
+        "minLength": 3
+      },
+      "layout": {
+        "row": "Row_archive_1",
+        "columns": 8
+      }
+    },
+    {
+      "type": "datetime",
+      "id": "Field_archivedAt",
+      "key": "archivedAt",
+      "label": "Archive date",
+      "validate": {
+        "required": true
+      },
+      "layout": {
+        "row": "Row_archive_1",
+        "columns": 8
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_archiveNotes",
+      "key": "archiveNotes",
+      "label": "Archive notes",
+      "description": "Retention, classification, or handover notes.",
+      "validate": {
+        "required": true,
+        "minLength": 10
+      },
+      "layout": {
+        "row": "Row_archive_2",
+        "columns": null
+      }
+    },
+    {
+      "type": "checkbox",
+      "id": "Field_archiveConfirmed",
+      "key": "archiveConfirmed",
+      "label": "The report has been stored according to archive policy.",
+      "validate": {
+        "required": true
+      },
+      "layout": {
+        "row": "Row_archive_3",
+        "columns": null
+      }
+    },
+    {
+      "type": "button",
+      "id": "Button_archive",
+      "label": "Complete archive",
+      "action": "submit",
+      "layout": {
+        "row": "Row_archive_4",
+        "columns": 4
+      }
+    }
+  ],
+  "type": "default",
+  "id": "administrative-report-archive-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.40.0"
+  },
+  "schemaVersion": 18
+}

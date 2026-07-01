@@ -1,0 +1,133 @@
+{
+  "components": [
+    {
+      "type": "text",
+      "id": "Text_Start",
+      "text": "### گزارش اداری\nاطلاعات پایه، اولویت، ریسک و متن اولیه گزارش را ثبت کنید.",
+      "layout": {
+        "row": "row_0",
+        "columns": null
+      }
+    },
+    {
+      "type": "textfield",
+      "id": "Field_Title",
+      "key": "reportTitle",
+      "label": "عنوان گزارش",
+      "layout": {
+        "row": "row_1",
+        "columns": 8
+      },
+      "validate": {
+        "required": true,
+        "minLength": 3,
+        "maxLength": 180,
+        "requiredErrorMessage": "عنوان گزارش الزامی است."
+      }
+    },
+    {
+      "type": "select",
+      "id": "Field_Priority",
+      "key": "priority",
+      "label": "اولویت",
+      "layout": {
+        "row": "row_2",
+        "columns": 8
+      },
+      "values": [
+        {
+          "label": "عادی",
+          "value": "normal"
+        },
+        {
+          "label": "زیاد",
+          "value": "high"
+        },
+        {
+          "label": "فوری",
+          "value": "urgent"
+        }
+      ],
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "number",
+      "id": "Field_RiskScore",
+      "key": "riskScore",
+      "label": "امتیاز ریسک",
+      "description": "عددی بین ۰ تا ۱۰۰",
+      "layout": {
+        "row": "row_3",
+        "columns": 8
+      },
+      "validate": {
+        "required": true,
+        "min": 0,
+        "max": 100
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_Summary",
+      "key": "reportSummary",
+      "label": "خلاصه گزارش",
+      "rows": 5,
+      "layout": {
+        "row": "row_4",
+        "columns": null
+      },
+      "validate": {
+        "required": true,
+        "minLength": 20
+      }
+    },
+    {
+      "type": "number",
+      "id": "Field_RevisionCount",
+      "key": "revisionCount",
+      "label": "تعداد اصلاحات قبلی",
+      "defaultValue": 0,
+      "layout": {
+        "row": "row_5",
+        "columns": 8
+      },
+      "validate": {
+        "min": 0
+      }
+    },
+    {
+      "type": "checkbox",
+      "id": "Field_DraftComplete",
+      "key": "draftComplete",
+      "label": "گزارش برای ارسال آماده است",
+      "layout": {
+        "row": "row_6",
+        "columns": null
+      },
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "button",
+      "id": "Button_Submit",
+      "label": "ارسال گزارش",
+      "action": "submit",
+      "layout": {
+        "row": "row_7",
+        "columns": null
+      }
+    }
+  ],
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.34.0"
+  },
+  "schemaVersion": 18,
+  "id": "administrative-report-draft-form",
+  "type": "default"
+}

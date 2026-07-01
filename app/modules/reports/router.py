@@ -10,12 +10,17 @@ from app.core.config import settings
 from app.auth.deps import get_current_user
 from app.core.rbac import require, can_view_report, can_create_report, is_secretariat
 from app.core.workflow import (
+    ACTION_META,
+    WORKFLOW_STAGES,
     allowed_actions,
     allowed_actions_for_status,
     can_edit as wf_can_edit,
     can_delete as wf_can_delete,
     get_recipients,
     get_transition,
+    status_tone,
+    workflow_progress,
+    workflow_stage,
 )
 from app.db.models.report import Report, ReportStatus
 from app.db.models.workflow_log import WorkflowLog
@@ -183,24 +188,44 @@ def _role_fa(role: Role) -> str:
     }.get(role, role.value)
 
 @router.get("", response_class=HTMLResponse)
-def page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def page(
+    request: Request,
+    view: str = Query(""),
+    status: str = Query(""),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    view = (view or "").strip().lower()
     q = db.query(Report).order_by(Report.id.desc())
     if user.role.value.startswith("secretariat"):
-        reports = q.limit(200).all()
+        reports_q = q
     elif user.role.value.startswith("org_prov"):
         reports_q = q.filter(Report.org_id == user.org_id)
-        if user.role == Role.ORG_PROV_EXPERT:
+        if user.role == Role.ORG_PROV_EXPERT and view not in ("archive", "tracking"):
             reports_q = reports_q.filter(Report.current_owner_id == user.id)
-        reports = reports_q.limit(200).all()
     else:
         # شهرستان: گزارش‌های شهرستان خودش + هر گزارش استانی که در صف او قرار گرفته است
         reports_q = q.filter(
             Report.org_id == user.org_id,
             ((Report.county_id == user.county_id) | ((Report.county_id.is_(None)) & (Report.current_owner_id == user.id))),
         )
-        if user.role == Role.ORG_COUNTY_EXPERT:
+        if user.role == Role.ORG_COUNTY_EXPERT and view not in ("archive", "tracking"):
             reports_q = reports_q.filter((Report.created_by_id == user.id) | (Report.current_owner_id == user.id))
-        reports = reports_q.limit(200).all()
+
+    if view == "inbox":
+        reports_q = reports_q.filter(Report.current_owner_id == user.id)
+    elif view == "archive":
+        reports_q = reports_q.filter(Report.status == ReportStatus.FINAL_APPROVED)
+    elif view == "tracking":
+        reports_q = reports_q.filter(Report.status != ReportStatus.DRAFT)
+
+    if status:
+        try:
+            reports_q = reports_q.filter(Report.status == ReportStatus(status))
+        except ValueError:
+            pass
+
+    reports = reports_q.limit(200).all()
 
     subs = []
     if user.role in (Role.ORG_COUNTY_EXPERT, Role.ORG_COUNTY_MANAGER) and user.org_id and user.county_id:
@@ -227,9 +252,25 @@ def page(request: Request, db: Session = Depends(get_db), user=Depends(get_curre
             for u in db.query(User).filter(User.id.in_(owner_ids)).all()
         }
 
+    status_counts = {status.value: 0 for status in ReportStatus}
+    for report in reports:
+        status_counts[getattr(report.status, "value", str(report.status))] = status_counts.get(getattr(report.status, "value", str(report.status)), 0) + 1
+
     return request.app.state.templates.TemplateResponse(
         "reports/index.html",
-        {"request": request, "reports": reports, "subs": subs, "forms_map_subs": forms_map_subs, "owner_names": owner_names, "user": user, "badge_count": get_badge_count(db, user)},
+        {
+            "request": request,
+            "reports": reports,
+            "subs": subs,
+            "forms_map_subs": forms_map_subs,
+            "owner_names": owner_names,
+            "user": user,
+            "badge_count": get_badge_count(db, user),
+            "status_counts": status_counts,
+            "status_tone": status_tone,
+            "workflow_stage": workflow_stage,
+            "view_mode": view,
+        },
     )
 
 @router.post("")
@@ -442,6 +483,10 @@ def view(request: Request, report_id: int, db: Session = Depends(get_db), user=D
             "actor_map": actor_map,
             "can_edit": _can_edit(user, r),
             "pdf_template_html": get_report_pdf_template_html(),
+            "workflow_progress": workflow_progress(r.kind, r.status),
+            "current_workflow_stage": workflow_stage(r.status),
+            "action_meta": ACTION_META,
+            "workflow_stages": WORKFLOW_STAGES,
         },
     )
 

@@ -39,6 +39,221 @@ class Transition:
     recipient_roles: tuple[Role, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowStage:
+    """UI/BPM catalog entry for one report workflow state."""
+
+    status: ReportStatus
+    label: str
+    actor_roles: tuple[Role, ...]
+    sla_hours: int
+    tone: str
+    camunda_task_id: str
+    camunda_form_id: str = ""
+
+
+WORKFLOW_STAGES: tuple[WorkflowStage, ...] = (
+    WorkflowStage(
+        status=ReportStatus.DRAFT,
+        label="تهیه پیش‌نویس",
+        actor_roles=(Role.ORG_COUNTY_EXPERT, Role.ORG_PROV_EXPERT),
+        sla_hours=72,
+        tone="draft",
+        camunda_task_id="PrepareReportDraft",
+        camunda_form_id="report-draft-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.COUNTY_MANAGER_REVIEW,
+        label="بازبینی مدیر شهرستان",
+        actor_roles=(Role.ORG_COUNTY_MANAGER,),
+        sla_hours=48,
+        tone="review",
+        camunda_task_id="ReviewByCountyManager",
+        camunda_form_id="report-review-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.PROV_EXPERT_REVIEW,
+        label="بازبینی کارشناس استان",
+        actor_roles=(Role.ORG_PROV_EXPERT,),
+        sla_hours=48,
+        tone="review",
+        camunda_task_id="ReviewByProvinceExpert",
+        camunda_form_id="report-review-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.PROV_MANAGER_REVIEW,
+        label="بازبینی مدیر استان",
+        actor_roles=(Role.ORG_PROV_MANAGER,),
+        sla_hours=48,
+        tone="review",
+        camunda_task_id="ReviewByProvinceManager",
+        camunda_form_id="report-review-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.SECRETARIAT_USER_REVIEW,
+        label="بازبینی کارشناس دبیرخانه",
+        actor_roles=(Role.SECRETARIAT_USER,),
+        sla_hours=72,
+        tone="review",
+        camunda_task_id="ReviewBySecretariatExpert",
+        camunda_form_id="report-review-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.SECRETARIAT_ADMIN_REVIEW,
+        label="بازبینی مدیر دبیرخانه",
+        actor_roles=(Role.SECRETARIAT_ADMIN,),
+        sla_hours=72,
+        tone="review",
+        camunda_task_id="ReviewBySecretariatManager",
+        camunda_form_id="report-review-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.NEEDS_REVISION,
+        label="برگشت برای اصلاح",
+        actor_roles=(
+            Role.ORG_COUNTY_EXPERT,
+            Role.ORG_COUNTY_MANAGER,
+            Role.ORG_PROV_EXPERT,
+            Role.ORG_PROV_MANAGER,
+            Role.SECRETARIAT_USER,
+            Role.SECRETARIAT_ADMIN,
+        ),
+        sla_hours=48,
+        tone="returned",
+        camunda_task_id="ReviseReport",
+        camunda_form_id="report-draft-form",
+    ),
+    WorkflowStage(
+        status=ReportStatus.FINAL_APPROVED,
+        label="تایید نهایی",
+        actor_roles=(),
+        sla_hours=0,
+        tone="approved",
+        camunda_task_id="ArchiveApprovedReport",
+    ),
+)
+
+
+STATUS_TONES: dict[ReportStatus, str] = {
+    stage.status: stage.tone for stage in WORKFLOW_STAGES
+}
+STATUS_TONES[ReportStatus.SECRETARIAT_REVIEW] = "review"
+
+
+ACTION_META: dict[Action, dict[str, str]] = {
+    "submit_for_review": {
+        "label": "ارسال برای بررسی",
+        "tone": "primary",
+        "icon": "send",
+        "dmn": "approve",
+    },
+    "approve": {
+        "label": "تایید و ارسال مرحله بعد",
+        "tone": "success",
+        "icon": "check-circle-2",
+        "dmn": "approve",
+    },
+    "request_revision": {
+        "label": "برگشت برای اصلاح",
+        "tone": "warning",
+        "icon": "undo-2",
+        "dmn": "return",
+    },
+    "final_approve": {
+        "label": "تایید نهایی",
+        "tone": "success",
+        "icon": "badge-check",
+        "dmn": "finalApprove",
+    },
+}
+
+
+ROLE_NAV: dict[Role, tuple[str, ...]] = {
+    Role.ORG_COUNTY_EXPERT: ("dashboard", "my_tasks", "create_report", "reports", "tracking", "notifications"),
+    Role.ORG_COUNTY_MANAGER: ("dashboard", "my_tasks", "reports", "tracking", "notifications"),
+    Role.ORG_PROV_EXPERT: ("dashboard", "my_tasks", "create_report", "reports", "tracking", "manager", "archive", "notifications"),
+    Role.ORG_PROV_MANAGER: ("dashboard", "my_tasks", "reports", "tracking", "manager", "archive", "notifications"),
+    Role.SECRETARIAT_USER: ("dashboard", "my_tasks", "reports", "tracking", "archive", "notifications", "audit"),
+    Role.SECRETARIAT_ADMIN: (
+        "dashboard",
+        "my_tasks",
+        "reports",
+        "tracking",
+        "manager",
+        "archive",
+        "notifications",
+        "audit",
+        "admin",
+    ),
+}
+
+
+def workflow_stage(status: ReportStatus) -> WorkflowStage | None:
+    """Return UI/BPM stage metadata for a report status."""
+    if status == ReportStatus.SECRETARIAT_REVIEW:
+        status = ReportStatus.SECRETARIAT_ADMIN_REVIEW
+    for stage in WORKFLOW_STAGES:
+        if stage.status == status:
+            return stage
+    return None
+
+
+def status_tone(status: ReportStatus | str) -> str:
+    if isinstance(status, str):
+        try:
+            status = ReportStatus(status)
+        except ValueError:
+            return "review"
+    return STATUS_TONES.get(status, "review")
+
+
+def workflow_path(kind: ReportKind) -> tuple[ReportStatus, ...]:
+    """Canonical happy path used by steppers, reports, and BPMN docs."""
+    if kind == ReportKind.COUNTY:
+        return (
+            ReportStatus.DRAFT,
+            ReportStatus.COUNTY_MANAGER_REVIEW,
+            ReportStatus.PROV_EXPERT_REVIEW,
+            ReportStatus.PROV_MANAGER_REVIEW,
+            ReportStatus.FINAL_APPROVED,
+        )
+    return (
+        ReportStatus.DRAFT,
+        ReportStatus.PROV_MANAGER_REVIEW,
+        ReportStatus.SECRETARIAT_USER_REVIEW,
+        ReportStatus.SECRETARIAT_ADMIN_REVIEW,
+        ReportStatus.FINAL_APPROVED,
+    )
+
+
+def workflow_progress(kind: ReportKind, status: ReportStatus) -> dict[str, object]:
+    """Return a serializable progress model for report detail screens."""
+    path = workflow_path(kind)
+    normalized_status = ReportStatus.SECRETARIAT_ADMIN_REVIEW if status == ReportStatus.SECRETARIAT_REVIEW else status
+    if normalized_status == ReportStatus.NEEDS_REVISION:
+        current_index = max(0, len(path) - 4)
+    else:
+        current_index = path.index(normalized_status) if normalized_status in path else 0
+    total = max(1, len(path) - 1)
+    return {
+        "current_index": current_index,
+        "percent": int(round((current_index / total) * 100)),
+        "stages": [
+            {
+                "status": item.value,
+                "label": (workflow_stage(item).label if workflow_stage(item) else item.value),
+                "tone": status_tone(item),
+                "state": "done" if i < current_index else ("active" if i == current_index else "upcoming"),
+            }
+            for i, item in enumerate(path)
+        ],
+    }
+
+
+def nav_items_for_role(role: Role) -> tuple[str, ...]:
+    return ROLE_NAV.get(role, ("dashboard", "reports", "notifications"))
+
+
 # ---- Helpers to query recipients ----
 
 

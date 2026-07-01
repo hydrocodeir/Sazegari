@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_ReportApproval" targetNamespace="https://hydrocode.ir/sazegari/report-workflow" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.8.0">
+  <bpmn:process id="ReportApprovalWorkflow" name="Report approval workflow" isExecutable="true">
+    <bpmn:startEvent id="StartReport" name="Report created">
+      <bpmn:outgoing>Flow_Start_ToDraft</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="PrepareReportDraft" name="Prepare report draft">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="org_county_expert,org_prov_expert" />
+        <zeebe:formDefinition formId="report-draft-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_ToDraft</bpmn:incoming>
+      <bpmn:incoming>Flow_Revision_ToDraft</bpmn:incoming>
+      <bpmn:outgoing>Flow_Draft_ToRoute</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="DetermineInitialRoute" name="Determine initial route">
+      <bpmn:extensionElements>
+        <zeebe:calledDecision decisionId="route_report_review" resultVariable="routing" bindingType="deployment" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Draft_ToRoute</bpmn:incoming>
+      <bpmn:outgoing>Flow_Route_ToKindGateway</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:exclusiveGateway id="Gateway_ReportKind" name="Report kind" default="Flow_Kind_Provincial">
+      <bpmn:incoming>Flow_Route_ToKindGateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Kind_County</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Kind_Provincial</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviewByCountyManager" name="Review by county manager">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="org_county_manager" />
+        <zeebe:formDefinition formId="report-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Kind_County</bpmn:incoming>
+      <bpmn:incoming>Flow_ProvExpert_Return_CountyManager</bpmn:incoming>
+      <bpmn:outgoing>Flow_CountyManager_ToDecision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_CountyManagerDecision" name="County manager decision" default="Flow_CountyManager_Return">
+      <bpmn:incoming>Flow_CountyManager_ToDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_CountyManager_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CountyManager_Return</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviewByProvinceExpert" name="Review by province expert">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="org_prov_expert" />
+        <zeebe:formDefinition formId="report-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_CountyManager_Approve</bpmn:incoming>
+      <bpmn:incoming>Flow_ProvinceManager_Return_Expert</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProvExpert_ToDecision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_ProvinceExpertDecision" name="Province expert decision" default="Flow_ProvExpert_Return_CountyManager">
+      <bpmn:incoming>Flow_ProvExpert_ToDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProvExpert_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ProvExpert_Return_CountyManager</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviewByProvinceManager" name="Review by province manager">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="org_prov_manager" />
+        <zeebe:formDefinition formId="report-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Kind_Provincial</bpmn:incoming>
+      <bpmn:incoming>Flow_ProvExpert_Approve</bpmn:incoming>
+      <bpmn:incoming>Flow_SecretariatExpert_Return_Manager</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProvinceManager_ToDecision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_ProvinceManagerDecision" name="Province manager decision" default="Flow_ProvinceManager_Return_Expert">
+      <bpmn:incoming>Flow_ProvinceManager_ToDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_ProvinceManager_FinalCounty</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ProvinceManager_ApproveProvincial</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ProvinceManager_Return_Expert</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviewBySecretariatExpert" name="Review by secretariat expert">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="secretariat_user" />
+        <zeebe:formDefinition formId="report-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ProvinceManager_ApproveProvincial</bpmn:incoming>
+      <bpmn:incoming>Flow_SecretariatManager_Return_Expert</bpmn:incoming>
+      <bpmn:outgoing>Flow_SecretariatExpert_ToDecision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_SecretariatExpertDecision" name="Secretariat expert decision" default="Flow_SecretariatExpert_Return_Manager">
+      <bpmn:incoming>Flow_SecretariatExpert_ToDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_SecretariatExpert_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_SecretariatExpert_Return_Manager</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviewBySecretariatManager" name="Review by secretariat manager">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="secretariat_admin" />
+        <zeebe:formDefinition formId="report-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_SecretariatExpert_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_SecretariatManager_ToDecision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_SecretariatManagerDecision" name="Secretariat manager decision" default="Flow_SecretariatManager_Return_Expert">
+      <bpmn:incoming>Flow_SecretariatManager_ToDecision</bpmn:incoming>
+      <bpmn:outgoing>Flow_SecretariatManager_FinalApprove</bpmn:outgoing>
+      <bpmn:outgoing>Flow_SecretariatManager_Return_Expert</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ReviseReport" name="Revise report">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="org_county_expert,org_county_manager,org_prov_expert,org_prov_manager,secretariat_user,secretariat_admin" />
+        <zeebe:formDefinition formId="report-draft-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_CountyManager_Return</bpmn:incoming>
+      <bpmn:outgoing>Flow_Revision_ToDraft</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="ArchiveApprovedReport" name="Archive approved report">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="archive-approved-report" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ProvinceManager_FinalCounty</bpmn:incoming>
+      <bpmn:incoming>Flow_SecretariatManager_FinalApprove</bpmn:incoming>
+      <bpmn:outgoing>Flow_Archive_ToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="EndApproved" name="Final approved">
+      <bpmn:incoming>Flow_Archive_ToEnd</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_ToDraft" sourceRef="StartReport" targetRef="PrepareReportDraft" />
+    <bpmn:sequenceFlow id="Flow_Draft_ToRoute" sourceRef="PrepareReportDraft" targetRef="DetermineInitialRoute" />
+    <bpmn:sequenceFlow id="Flow_Route_ToKindGateway" sourceRef="DetermineInitialRoute" targetRef="Gateway_ReportKind" />
+    <bpmn:sequenceFlow id="Flow_Kind_County" name="county" sourceRef="Gateway_ReportKind" targetRef="ReviewByCountyManager">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=routing.nextStep = "county_manager"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Kind_Provincial" name="provincial" sourceRef="Gateway_ReportKind" targetRef="ReviewByProvinceManager" />
+    <bpmn:sequenceFlow id="Flow_CountyManager_ToDecision" sourceRef="ReviewByCountyManager" targetRef="Gateway_CountyManagerDecision" />
+    <bpmn:sequenceFlow id="Flow_CountyManager_Approve" name="approve" sourceRef="Gateway_CountyManagerDecision" targetRef="ReviewByProvinceExpert">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "approve"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_CountyManager_Return" name="return" sourceRef="Gateway_CountyManagerDecision" targetRef="ReviseReport" />
+    <bpmn:sequenceFlow id="Flow_Revision_ToDraft" sourceRef="ReviseReport" targetRef="PrepareReportDraft" />
+    <bpmn:sequenceFlow id="Flow_ProvExpert_ToDecision" sourceRef="ReviewByProvinceExpert" targetRef="Gateway_ProvinceExpertDecision" />
+    <bpmn:sequenceFlow id="Flow_ProvExpert_Approve" name="approve" sourceRef="Gateway_ProvinceExpertDecision" targetRef="ReviewByProvinceManager">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "approve"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ProvExpert_Return_CountyManager" name="return" sourceRef="Gateway_ProvinceExpertDecision" targetRef="ReviewByCountyManager" />
+    <bpmn:sequenceFlow id="Flow_ProvinceManager_ToDecision" sourceRef="ReviewByProvinceManager" targetRef="Gateway_ProvinceManagerDecision" />
+    <bpmn:sequenceFlow id="Flow_ProvinceManager_FinalCounty" name="final county approval" sourceRef="Gateway_ProvinceManagerDecision" targetRef="ArchiveApprovedReport">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reportKind = "county" and decision = "finalApprove"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ProvinceManager_ApproveProvincial" name="approve provincial" sourceRef="Gateway_ProvinceManagerDecision" targetRef="ReviewBySecretariatExpert">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reportKind = "provincial" and decision = "approve"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ProvinceManager_Return_Expert" name="return" sourceRef="Gateway_ProvinceManagerDecision" targetRef="ReviewByProvinceExpert" />
+    <bpmn:sequenceFlow id="Flow_SecretariatExpert_ToDecision" sourceRef="ReviewBySecretariatExpert" targetRef="Gateway_SecretariatExpertDecision" />
+    <bpmn:sequenceFlow id="Flow_SecretariatExpert_Approve" name="approve" sourceRef="Gateway_SecretariatExpertDecision" targetRef="ReviewBySecretariatManager">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "approve"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SecretariatExpert_Return_Manager" name="return" sourceRef="Gateway_SecretariatExpertDecision" targetRef="ReviewByProvinceManager" />
+    <bpmn:sequenceFlow id="Flow_SecretariatManager_ToDecision" sourceRef="ReviewBySecretariatManager" targetRef="Gateway_SecretariatManagerDecision" />
+    <bpmn:sequenceFlow id="Flow_SecretariatManager_FinalApprove" name="final approve" sourceRef="Gateway_SecretariatManagerDecision" targetRef="ArchiveApprovedReport">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "finalApprove"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_SecretariatManager_Return_Expert" name="return" sourceRef="Gateway_SecretariatManagerDecision" targetRef="ReviewBySecretariatExpert" />
+    <bpmn:sequenceFlow id="Flow_Archive_ToEnd" sourceRef="ArchiveApprovedReport" targetRef="EndApproved" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_ReportApproval">
+    <bpmndi:BPMNPlane id="BPMNPlane_ReportApproval" bpmnElement="ReportApprovalWorkflow">
+      <bpmndi:BPMNShape id="StartReport_di" bpmnElement="StartReport">
+        <dc:Bounds x="152" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PrepareReportDraft_di" bpmnElement="PrepareReportDraft">
+        <dc:Bounds x="240" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DetermineInitialRoute_di" bpmnElement="DetermineInitialRoute">
+        <dc:Bounds x="390" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ReportKind_di" bpmnElement="Gateway_ReportKind" isMarkerVisible="true">
+        <dc:Bounds x="545" y="195" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviewByCountyManager_di" bpmnElement="ReviewByCountyManager">
+        <dc:Bounds x="650" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_CountyManagerDecision_di" bpmnElement="Gateway_CountyManagerDecision" isMarkerVisible="true">
+        <dc:Bounds x="805" y="95" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviewByProvinceExpert_di" bpmnElement="ReviewByProvinceExpert">
+        <dc:Bounds x="910" y="80" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ProvinceExpertDecision_di" bpmnElement="Gateway_ProvinceExpertDecision" isMarkerVisible="true">
+        <dc:Bounds x="1065" y="95" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviewByProvinceManager_di" bpmnElement="ReviewByProvinceManager">
+        <dc:Bounds x="1170" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ProvinceManagerDecision_di" bpmnElement="Gateway_ProvinceManagerDecision" isMarkerVisible="true">
+        <dc:Bounds x="1325" y="195" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviewBySecretariatExpert_di" bpmnElement="ReviewBySecretariatExpert">
+        <dc:Bounds x="1430" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_SecretariatExpertDecision_di" bpmnElement="Gateway_SecretariatExpertDecision" isMarkerVisible="true">
+        <dc:Bounds x="1585" y="195" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviewBySecretariatManager_di" bpmnElement="ReviewBySecretariatManager">
+        <dc:Bounds x="1690" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_SecretariatManagerDecision_di" bpmnElement="Gateway_SecretariatManagerDecision" isMarkerVisible="true">
+        <dc:Bounds x="1845" y="195" width="50" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReviseReport_di" bpmnElement="ReviseReport">
+        <dc:Bounds x="650" y="320" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ArchiveApprovedReport_di" bpmnElement="ArchiveApprovedReport">
+        <dc:Bounds x="1950" y="180" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndApproved_di" bpmnElement="EndApproved">
+        <dc:Bounds x="2102" y="202" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_ToDraft_di" bpmnElement="Flow_Start_ToDraft"><di:waypoint x="188" y="220" /><di:waypoint x="240" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Draft_ToRoute_di" bpmnElement="Flow_Draft_ToRoute"><di:waypoint x="340" y="220" /><di:waypoint x="390" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Route_ToKindGateway_di" bpmnElement="Flow_Route_ToKindGateway"><di:waypoint x="490" y="220" /><di:waypoint x="545" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Kind_County_di" bpmnElement="Flow_Kind_County"><di:waypoint x="570" y="195" /><di:waypoint x="570" y="120" /><di:waypoint x="650" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Kind_Provincial_di" bpmnElement="Flow_Kind_Provincial"><di:waypoint x="595" y="220" /><di:waypoint x="1170" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CountyManager_ToDecision_di" bpmnElement="Flow_CountyManager_ToDecision"><di:waypoint x="750" y="120" /><di:waypoint x="805" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CountyManager_Approve_di" bpmnElement="Flow_CountyManager_Approve"><di:waypoint x="855" y="120" /><di:waypoint x="910" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CountyManager_Return_di" bpmnElement="Flow_CountyManager_Return"><di:waypoint x="830" y="145" /><di:waypoint x="830" y="360" /><di:waypoint x="750" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Revision_ToDraft_di" bpmnElement="Flow_Revision_ToDraft"><di:waypoint x="650" y="360" /><di:waypoint x="290" y="360" /><di:waypoint x="290" y="260" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvExpert_ToDecision_di" bpmnElement="Flow_ProvExpert_ToDecision"><di:waypoint x="1010" y="120" /><di:waypoint x="1065" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvExpert_Approve_di" bpmnElement="Flow_ProvExpert_Approve"><di:waypoint x="1090" y="145" /><di:waypoint x="1090" y="220" /><di:waypoint x="1170" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvExpert_Return_CountyManager_di" bpmnElement="Flow_ProvExpert_Return_CountyManager"><di:waypoint x="1090" y="95" /><di:waypoint x="1090" y="40" /><di:waypoint x="700" y="40" /><di:waypoint x="700" y="80" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvinceManager_ToDecision_di" bpmnElement="Flow_ProvinceManager_ToDecision"><di:waypoint x="1270" y="220" /><di:waypoint x="1325" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvinceManager_FinalCounty_di" bpmnElement="Flow_ProvinceManager_FinalCounty"><di:waypoint x="1350" y="245" /><di:waypoint x="1350" y="300" /><di:waypoint x="2000" y="300" /><di:waypoint x="2000" y="260" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvinceManager_ApproveProvincial_di" bpmnElement="Flow_ProvinceManager_ApproveProvincial"><di:waypoint x="1375" y="220" /><di:waypoint x="1430" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ProvinceManager_Return_Expert_di" bpmnElement="Flow_ProvinceManager_Return_Expert"><di:waypoint x="1350" y="195" /><di:waypoint x="1350" y="120" /><di:waypoint x="1010" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatExpert_ToDecision_di" bpmnElement="Flow_SecretariatExpert_ToDecision"><di:waypoint x="1530" y="220" /><di:waypoint x="1585" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatExpert_Approve_di" bpmnElement="Flow_SecretariatExpert_Approve"><di:waypoint x="1635" y="220" /><di:waypoint x="1690" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatExpert_Return_Manager_di" bpmnElement="Flow_SecretariatExpert_Return_Manager"><di:waypoint x="1610" y="195" /><di:waypoint x="1610" y="150" /><di:waypoint x="1220" y="150" /><di:waypoint x="1220" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatManager_ToDecision_di" bpmnElement="Flow_SecretariatManager_ToDecision"><di:waypoint x="1790" y="220" /><di:waypoint x="1845" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatManager_FinalApprove_di" bpmnElement="Flow_SecretariatManager_FinalApprove"><di:waypoint x="1895" y="220" /><di:waypoint x="1950" y="220" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SecretariatManager_Return_Expert_di" bpmnElement="Flow_SecretariatManager_Return_Expert"><di:waypoint x="1870" y="195" /><di:waypoint x="1870" y="150" /><di:waypoint x="1480" y="150" /><di:waypoint x="1480" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Archive_ToEnd_di" bpmnElement="Flow_Archive_ToEnd"><di:waypoint x="2050" y="220" /><di:waypoint x="2102" y="220" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

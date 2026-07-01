@@ -1,0 +1,107 @@
+{
+  "components": [
+    {
+      "type": "text",
+      "id": "Text_ReviewIntro",
+      "text": "### تصمیم بازبینی\nاین فرم پشت دکمه‌های تایید، برگشت و تایید نهایی در داشبورد قرار می‌گیرد.",
+      "layout": {
+        "row": "row_0",
+        "columns": null
+      }
+    },
+    {
+      "type": "select",
+      "id": "Field_Decision",
+      "key": "decision",
+      "label": "تصمیم",
+      "layout": {
+        "row": "row_1",
+        "columns": 8
+      },
+      "values": [
+        {
+          "label": "تایید و ارسال مرحله بعد",
+          "value": "approve"
+        },
+        {
+          "label": "برگشت برای اصلاح",
+          "value": "return"
+        },
+        {
+          "label": "تایید نهایی",
+          "value": "finalApprove"
+        }
+      ],
+      "validate": {
+        "required": true,
+        "requiredErrorMessage": "تصمیم بازبینی الزامی است."
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_ReviewComment",
+      "key": "reviewComment",
+      "label": "یادداشت تصمیم",
+      "rows": 4,
+      "layout": {
+        "row": "row_2",
+        "columns": null
+      },
+      "validate": {
+        "required": true,
+        "minLength": 3,
+        "requiredErrorMessage": "یادداشت تصمیم را وارد کنید."
+      }
+    },
+    {
+      "type": "select",
+      "id": "Field_RecipientUserId",
+      "key": "recipientUserId",
+      "label": "گیرنده مرحله بعد",
+      "description": "در داشبورد فعلی این فهرست از همان State Machine پر می‌شود.",
+      "layout": {
+        "row": "row_3",
+        "columns": 8
+      },
+      "valuesExpression": "=availableRecipients",
+      "conditional": {
+        "hide": "=decision = \"finalApprove\""
+      },
+      "validate": {
+        "validationExpression": "=decision = \"finalApprove\" or recipientUserId != null"
+      }
+    },
+    {
+      "type": "checkbox",
+      "id": "Field_ConfirmDecision",
+      "key": "decisionConfirmed",
+      "label": "از ثبت این تصمیم مطمئن هستم",
+      "layout": {
+        "row": "row_4",
+        "columns": null
+      },
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "button",
+      "id": "Button_SubmitDecision",
+      "label": "ثبت تصمیم",
+      "action": "submit",
+      "layout": {
+        "row": "row_5",
+        "columns": null
+      }
+    }
+  ],
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.34.0"
+  },
+  "schemaVersion": 18,
+  "id": "report-review-form",
+  "type": "default"
+}

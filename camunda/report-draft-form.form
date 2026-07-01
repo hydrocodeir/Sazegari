@@ -1,0 +1,112 @@
+{
+  "components": [
+    {
+      "type": "text",
+      "id": "Text_DraftIntro",
+      "text": "### ایجاد یا اصلاح گزارش\nاطلاعات پایه، متن گزارش و تکمیل بودن پیش‌نویس را ثبت کنید.",
+      "layout": {
+        "row": "row_0",
+        "columns": null
+      }
+    },
+    {
+      "type": "select",
+      "id": "Field_ReportKind",
+      "key": "reportKind",
+      "label": "نوع گزارش",
+      "layout": {
+        "row": "row_1",
+        "columns": 8
+      },
+      "values": [
+        {
+          "label": "شهرستانی",
+          "value": "county"
+        },
+        {
+          "label": "استانی",
+          "value": "provincial"
+        }
+      ],
+      "validate": {
+        "required": true,
+        "requiredErrorMessage": "نوع گزارش را انتخاب کنید."
+      }
+    },
+    {
+      "type": "textfield",
+      "id": "Field_ReportTitle",
+      "key": "reportTitle",
+      "label": "عنوان گزارش",
+      "layout": {
+        "row": "row_2",
+        "columns": 8
+      },
+      "validate": {
+        "required": true,
+        "minLength": 3,
+        "maxLength": 180,
+        "requiredErrorMessage": "عنوان گزارش الزامی است."
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_ReportSummary",
+      "key": "reportSummary",
+      "label": "خلاصه مدیریتی",
+      "rows": 5,
+      "layout": {
+        "row": "row_3",
+        "columns": null
+      },
+      "validate": {
+        "required": true,
+        "minLength": 20,
+        "requiredErrorMessage": "خلاصه مدیریتی را وارد کنید."
+      }
+    },
+    {
+      "type": "checkbox",
+      "id": "Field_DraftComplete",
+      "key": "draftComplete",
+      "label": "پیش‌نویس برای ارسال آماده است",
+      "layout": {
+        "row": "row_4",
+        "columns": null
+      },
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_SubmitComment",
+      "key": "submitComment",
+      "label": "توضیح ارسال",
+      "rows": 3,
+      "layout": {
+        "row": "row_5",
+        "columns": null
+      }
+    },
+    {
+      "type": "button",
+      "id": "Button_SubmitDraft",
+      "label": "ارسال برای بررسی",
+      "action": "submit",
+      "layout": {
+        "row": "row_6",
+        "columns": null
+      }
+    }
+  ],
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.34.0"
+  },
+  "schemaVersion": 18,
+  "id": "report-draft-form",
+  "type": "default"
+}

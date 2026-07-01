@@ -1,0 +1,133 @@
+{
+  "components": [
+    {
+      "type": "text",
+      "id": "Text_Review",
+      "text": "### تصمیم بازبینی\nتصمیم شما مسیر بعدی پرونده را در BPMN تعیین می‌کند.",
+      "layout": {
+        "row": "row_0",
+        "columns": null
+      }
+    },
+    {
+      "type": "select",
+      "id": "Field_Decision",
+      "key": "decision",
+      "label": "تصمیم",
+      "layout": {
+        "row": "row_1",
+        "columns": 8
+      },
+      "values": [
+        {
+          "label": "تایید",
+          "value": "approve"
+        },
+        {
+          "label": "رد",
+          "value": "reject"
+        },
+        {
+          "label": "برگشت برای اصلاح",
+          "value": "return"
+        },
+        {
+          "label": "ارجاع به مقام بالاتر",
+          "value": "escalate"
+        },
+        {
+          "label": "نهایی‌سازی",
+          "value": "finalize"
+        },
+        {
+          "label": "بازبینی مدیر سامانه",
+          "value": "adminOverride"
+        }
+      ],
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_ReviewComment",
+      "key": "reviewComment",
+      "label": "یادداشت تصمیم",
+      "rows": 4,
+      "layout": {
+        "row": "row_2",
+        "columns": null
+      },
+      "validate": {
+        "required": true,
+        "minLength": 3
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_RevisionInstructions",
+      "key": "revisionInstructions",
+      "label": "دستور اصلاح",
+      "rows": 4,
+      "layout": {
+        "row": "row_3",
+        "columns": null
+      },
+      "conditional": {
+        "hide": "=decision != \"return\""
+      },
+      "validate": {
+        "validationExpression": "=decision != \"return\" or string length(revisionInstructions) >= 10"
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "Field_EscalationReason",
+      "key": "escalationReason",
+      "label": "دلیل ارجاع",
+      "rows": 3,
+      "layout": {
+        "row": "row_4",
+        "columns": null
+      },
+      "conditional": {
+        "hide": "=decision != \"escalate\" and decision != \"adminOverride\""
+      },
+      "validate": {
+        "validationExpression": "=(decision != \"escalate\" and decision != \"adminOverride\") or string length(escalationReason) >= 10"
+      }
+    },
+    {
+      "type": "checkbox",
+      "id": "Field_ConfirmDecision",
+      "key": "decisionConfirmed",
+      "label": "از ثبت این تصمیم مطمئن هستم",
+      "layout": {
+        "row": "row_5",
+        "columns": null
+      },
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "type": "button",
+      "id": "Button_SubmitDecision",
+      "label": "ثبت تصمیم",
+      "action": "submit",
+      "layout": {
+        "row": "row_6",
+        "columns": null
+      }
+    }
+  ],
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.34.0"
+  },
+  "schemaVersion": 18,
+  "id": "administrative-report-review-form",
+  "type": "default"
+}

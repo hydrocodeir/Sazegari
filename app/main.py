@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
 from starlette.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
@@ -30,6 +30,8 @@ import app.db.models  # noqa: F401
 
 from app.db.models.user import User, Role
 from app.db.models.report import Report
+from app.db.models.report import ReportStatus
+from app.db.models.workflow_log import WorkflowLog
 from app.db.models.submission import Submission
 from app.db.models.org_county import OrgCountyUnit
 from app.db.models.county import County
@@ -83,6 +85,14 @@ def _wants_html(request: Request) -> bool:
 
 templates = Jinja2Templates(directory="app/templates")
 from app.core.rbac import has_perm, Perm, can_manage_masterdata, can_view_forms, can_create_report, can_submit_data
+from app.core.workflow import (
+    ACTION_META,
+    WORKFLOW_STAGES,
+    nav_items_for_role,
+    status_tone,
+    workflow_progress,
+    workflow_stage,
+)
 
 # Make RBAC helpers available in templates
 templates.env.globals['has_perm'] = has_perm
@@ -91,6 +101,12 @@ templates.env.globals['can_manage_masterdata'] = can_manage_masterdata
 templates.env.globals['can_view_forms'] = can_view_forms
 templates.env.globals['can_create_report'] = can_create_report
 templates.env.globals['can_submit_data'] = can_submit_data
+templates.env.globals['workflow_stage'] = workflow_stage
+templates.env.globals['workflow_progress'] = workflow_progress
+templates.env.globals['status_tone'] = status_tone
+templates.env.globals['ACTION_META'] = ACTION_META
+templates.env.globals['WORKFLOW_STAGES'] = WORKFLOW_STAGES
+templates.env.globals['nav_items_for_role'] = nav_items_for_role
 
 app = FastAPI(title=settings.APP_NAME)
 app.state.templates = templates
@@ -330,11 +346,61 @@ def home(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
         reports_q = reports_q.filter(Report.org_id == user.org_id, Report.county_id == user.county_id)
         subs_q = subs_q.filter(Submission.org_id == user.org_id, Submission.county_id == user.county_id)
 
+    visible_reports = reports_q.all()
+    status_counts = {status.value: 0 for status in ReportStatus}
+    for report in visible_reports:
+        status_counts[getattr(report.status, "value", str(report.status))] = status_counts.get(getattr(report.status, "value", str(report.status)), 0) + 1
+
+    pending_count = sum(
+        status_counts.get(s.value, 0)
+        for s in (
+            ReportStatus.COUNTY_MANAGER_REVIEW,
+            ReportStatus.PROV_EXPERT_REVIEW,
+            ReportStatus.PROV_MANAGER_REVIEW,
+            ReportStatus.SECRETARIAT_USER_REVIEW,
+            ReportStatus.SECRETARIAT_ADMIN_REVIEW,
+            ReportStatus.SECRETARIAT_REVIEW,
+        )
+    )
+    returned_count = status_counts.get(ReportStatus.NEEDS_REVISION.value, 0)
+    approved_count = status_counts.get(ReportStatus.FINAL_APPROVED.value, 0)
+    draft_count = status_counts.get(ReportStatus.DRAFT.value, 0)
+
+    recent_reports = sorted(visible_reports, key=lambda item: item.id or 0, reverse=True)[:6]
+    recent_logs_q = (
+        db.query(WorkflowLog)
+        .join(Report, WorkflowLog.report_id == Report.id)
+        .order_by(WorkflowLog.id.desc())
+    )
+    if user.role.value.startswith("secretariat"):
+        pass
+    elif user.role.value.startswith("org_prov"):
+        recent_logs_q = recent_logs_q.filter(Report.org_id == user.org_id)
+    else:
+        recent_logs_q = recent_logs_q.filter(Report.org_id == user.org_id, Report.county_id == user.county_id)
+    recent_logs = recent_logs_q.limit(8).all()
+
+    review_by_status = {
+        row[0].value if hasattr(row[0], "value") else str(row[0]): row[1]
+        for row in reports_q.with_entities(Report.status, func.count(Report.id)).group_by(Report.status).all()
+    }
+
     kpi = {
         "unread_notifications": get_badge_count(db, user),
         "my_queue": db.query(Report).filter(Report.current_owner_id == user.id).count(),
-        "total_reports": reports_q.count(),
+        "total_reports": len(visible_reports),
         "total_submissions": subs_q.count(),
+        "pending_reports": pending_count,
+        "returned_reports": returned_count,
+        "approved_reports": approved_count,
+        "draft_reports": draft_count,
+        "sla_risk": returned_count + max(0, pending_count - approved_count),
+    }
+    dashboard_model = {
+        "status_counts": status_counts,
+        "review_by_status": review_by_status,
+        "recent_reports": recent_reports,
+        "recent_logs": recent_logs,
     }
 
     # Dashboard ویژه مدیر استان
@@ -356,10 +422,11 @@ def home(request: Request, db=Depends(get_db), user=Depends(get_current_user)):
                 "badge_count": kpi["unread_notifications"],
                 "kpi": kpi,
                 "counties": counties,
+                "dashboard_model": dashboard_model,
             },
         )
 
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "user": user, "badge_count": kpi["unread_notifications"], "kpi": kpi},
+        {"request": request, "user": user, "badge_count": kpi["unread_notifications"], "kpi": kpi, "dashboard_model": dashboard_model},
     )

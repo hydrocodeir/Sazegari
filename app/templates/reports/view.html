@@ -4,11 +4,12 @@
 {% endblock %}
 {% block page_title %}گزارش #{{ report.id }}{% endblock %}
 {% block content %}
-<div class="row g-3">
+<div class="report-workspace">
   <div class="col-12">
-    <div class="card p-3 report-hero hover-lift border-0">
+    <div class="workflow-case-header">
       <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
         <div class="flex-grow-1">
+          <div class="breadcrumb-line">گزارش‌ها / پرونده #{{ report.id }}</div>
           {% if can_edit %}
             <div class="row g-2">
               <div class="col-lg-7">
@@ -32,11 +33,23 @@
             {% if doc.meta.subtitle %}<div class="text-muted small mt-1">تیپ فرم پایش و حوزه خروجی را انتخاب کن تا جدول تجمیعی (براساس آخرین بازه ثبت‌شده) به گزارش اضافه شود.</div>{% endif %}
           {% endif %}
 
-          <div class="text-muted small mt-2">
-            نوع: <span class="badge text-bg-info">{{ report.kind_label }}</span>
-            <span class="mx-1">|</span>
-            وضعیت: <span class="badge" id="statusBadge">{{ report.status_label }}</span>
-            {% if report.current_owner_id %}<span class="mx-1">|</span> در صف: <span class="badge text-bg-warning">{{ owner_name }}</span>{% endif %}
+          <div class="case-meta-strip">
+            <span class="badge badge-soft">{{ report.kind_label }}</span>
+            <span class="badge badge-status status-{{ status_tone(report.status) }}">{{ report.status_label }}</span>
+            {% if current_workflow_stage %}<span class="badge badge-soft"><i data-lucide="workflow"></i>{{ current_workflow_stage.camunda_task_id }}</span>{% endif %}
+            {% if report.current_owner_id %}<span class="badge badge-assignee"><i data-lucide="user-round"></i>{{ owner_name }}</span>{% endif %}
+          </div>
+
+          <div class="workflow-progress" aria-label="پیشرفت گردش‌کار">
+            <div class="workflow-progress-bar"><span style="width: {{ workflow_progress.percent }}%"></span></div>
+            <div class="workflow-progress-steps">
+              {% for step in workflow_progress.stages %}
+                <div class="workflow-progress-step {{ step.state }}">
+                  <span></span>
+                  <strong>{{ step.label }}</strong>
+                </div>
+              {% endfor %}
+            </div>
           </div>
 
           <div class="report-stepper mt-3" id="reportStepper">
@@ -73,10 +86,10 @@
   </div>
 
   <!-- Left: Builder / Full report -->
-  <div class="col-lg-8">
+  <div class="report-content-column">
 
     <!-- 1) Intro -->
-    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift">
+    <div class="workspace-panel mb-3">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div class="h6 m-0">۱) مقدمه و پیوست‌ها</div>
@@ -135,12 +148,12 @@
     </div>
 
     <!-- Attachments -->
-    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift" id="fileAttachmentsBox">
+    <div class="workspace-panel mb-3" id="fileAttachmentsBox">
       {% include "reports/_attachments_files.html" %}
     </div>
 
     <!-- 2) Sections -->
-    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift">
+    <div class="workspace-panel mb-3">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div class="h6 m-0">۲) فرم‌های انتخابی و جداول</div>
@@ -229,7 +242,7 @@
     </div>
 
     <!-- 3) Conclusion -->
-    <div class="card p-3 border-0 shadow-sm hover-lift">
+    <div class="workspace-panel">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
           <div class="h6 m-0">۳) نتیجه‌گیری و نتایج</div>
@@ -264,14 +277,17 @@
   </div>
 
   <!-- Right: Workflow/History -->
-  <div class="col-lg-4">
-    <div class="card p-3 border-0 shadow-sm mb-3 hover-lift" id="actionsBox">
+  <aside class="report-sidebar-column">
+    <div class="workspace-panel mb-3 sticky-panel" id="actionsBox">
       {% include "reports/_actions.html" %}
     </div>
 
-    <div class="card p-3 border-0 shadow-sm hover-lift">
+    <div class="workspace-panel">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="m-0">تاریخچه گردش‌کار</h6>
+        <div>
+          <h6 class="m-0">تایم‌لاین گردش‌کار</h6>
+          <div class="text-muted small">منطبق با WorkflowLog و مسیر BPMN</div>
+        </div>
         <button
           class="btn btn-sm btn-outline-primary"
           type="button"
@@ -279,21 +295,19 @@
           <i data-lucide="workflow"></i>نمایش فلوچارت
         </button>
       </div>
-      <div class="table-responsive">
-        <table class="table table-sm align-middle" data-paginate="true" data-page-size="5">
-          <thead><tr><th>#</th><th>اقدام</th><th>از</th><th>به</th><th>انجام‌دهنده</th></tr></thead>
-          <tbody>
-            {% for l in logs %}
-              <tr>
-                <td>{{ l.id }}</td>
-                <td>{{ l.action }}</td>
-                <td>{{ l.from_status }}</td>
-                <td>{{ l.to_status }}</td>
-                <td>{{ actor_map.get(l.actor_id, l.actor_id) }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="timeline-list detailed">
+        {% for l in logs %}
+          <div class="timeline-item">
+            <span class="timeline-pin"></span>
+            <div>
+              <strong>{{ action_meta.get(l.action, {}).get("label", l.action) }}</strong>
+              <small>#{{ l.id }} · {{ l.from_status }} → {{ l.to_status }} · {{ actor_map.get(l.actor_id, l.actor_id) }}</small>
+              {% if l.comment %}<p>{{ l.comment }}</p>{% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="empty-state">هنوز اقدامی در گردش‌کار ثبت نشده است.</div>
+        {% endfor %}
       </div>
     </div>
 
@@ -337,7 +351,7 @@
       </div>
     </div>
 
-    <div class="card p-3 border-0 shadow-sm mt-3 hover-lift">
+    <div class="workspace-panel mt-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="m-0">لاگ تغییرات محتوا</h6>
         <div class="text-muted small">(ReportAuditLog)</div>
@@ -394,7 +408,7 @@
         </div>
       {% endif %}
     </div>
-  </div>
+  </aside>
 
 </div>
 

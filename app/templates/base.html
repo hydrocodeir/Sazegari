@@ -3,10 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#f5f5f5" />
-  <title>{% block title %}سامانه سازگاری با کم‌آبی{% endblock %}</title>
-
-  <!-- Persian font is self-hosted in /static/css/fonts -->
+  <meta name="theme-color" content="#f8fafc" />
+  <title>{% block page_title %}سامانه سازگاری با کم‌آبی{% endblock %}</title>
 
   <link rel="stylesheet" href="{{ url_for('static', path='/css/tailwind.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}" />
@@ -19,224 +17,175 @@
   <script src="{{ url_for('static', path='/js/app.js') }}" defer></script>
 </head>
 
-<body class="bg-body-tertiary">
-  <div class="app-shell">
+<body class="enterprise-body">
+  {% set visible_nav = nav_items_for_role(user.role) if user else () %}
+  {% set path = request.url.path %}
+  {% set nav_catalog = {
+    "dashboard": {"label": "داشبورد", "href": "/", "icon": "layout-dashboard", "active": path == "/"},
+    "my_tasks": {"label": "کارهای من", "href": "/reports?view=inbox", "icon": "inbox", "active": path.startswith("/reports") and request.query_params.get('view') == "inbox"},
+    "create_report": {"label": "ایجاد گزارش", "href": "/reports", "icon": "file-plus-2", "active": false},
+    "reports": {"label": "گزارش‌ها", "href": "/reports", "icon": "files", "active": path.startswith("/reports") and not request.query_params.get('view')},
+    "tracking": {"label": "رهگیری گردش‌کار", "href": "/reports?view=tracking", "icon": "workflow", "active": path.startswith("/reports") and request.query_params.get('view') == "tracking"},
+    "manager": {"label": "داشبورد مدیران", "href": "/", "icon": "chart-no-axes-combined", "active": path.startswith("/dashboard")},
+    "archive": {"label": "آرشیو", "href": "/reports?view=archive", "icon": "archive", "active": path.startswith("/reports") and request.query_params.get('view') == "archive"},
+    "notifications": {"label": "اعلان‌ها", "href": "/notifications", "icon": "bell", "active": path.startswith("/notifications")},
+    "audit": {"label": "لاگ‌ها", "href": "/audit", "icon": "notebook-text", "active": path.startswith("/audit")},
+    "admin": {"label": "تنظیمات", "href": "/policy", "icon": "settings-2", "active": path.startswith("/policy") or path.startswith("/users") or path.startswith("/forms") or path.startswith("/orgs") or path.startswith("/counties") or path.startswith("/programs")}
+  } %}
 
-    <!-- Sidebar -->
-    <aside class="app-sidebar">
-      <!-- <div class="sidebar-brand">
-        <a href="/" class="sidebar-brand-logo" aria-label="صفحه اصلی">
-          <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="لوگو">
+  <div class="app-shell enterprise-shell" data-shell>
+    <aside class="app-sidebar enterprise-sidebar" aria-label="ناوبری اصلی">
+      <div class="enterprise-brand">
+        <a href="/" class="enterprise-logo" aria-label="صفحه اصلی">
+          <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="">
+          <span class="enterprise-logo-mark">س</span>
         </a>
-      </div> -->
-
-      <div class="sidebar-section">
-        <div class="sidebar-caption">منو</div>
-
-        <a class="sidebar-link {% if request.url.path=='/' %}active{% endif %}" href="/">
-          <i data-lucide="layout-dashboard"></i><span>داشبورد</span>
-        </a>
-        {% if user and can_submit_data(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/submissions') %}active{% endif %}" href="/submissions">
-          <i data-lucide="clipboard-check"></i><span>ثبت داده</span>
-        </a>
-        {% endif %}
-        {% if user %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}" href="/reports">
-          <i data-lucide="file-text"></i><span>گزارش‌ها</span>
-        </a>
-
-        {# ایجاد تیپ فرم و Baseline فقط توسط مدیر دبیرخانه انجام می‌شود (نه کارشناس استان/شهرستان). #}
-        {% endif %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/notifications') %}active{% endif %}" href="/notifications">
-          <i data-lucide="bell"></i><span>اعلان‌ها</span>
-          {% if badge_count and badge_count>0 %}
-            <span class="badge text-bg-danger ms-auto">{{ badge_count }}</span>
-          {% endif %}
-        </a>
+        <div class="enterprise-brand-text">
+          <strong>سازگاری با کم‌آبی</strong>
+          <span>Workflow Command Center</span>
+        </div>
+        <button class="icon-btn sidebar-collapse-btn" type="button" data-sidebar-collapse aria-label="باز و بسته کردن نوار کناری">
+          <i data-lucide="panel-right-close"></i>
+        </button>
       </div>
 
+      <nav class="enterprise-nav">
+        <div class="sidebar-caption">فضای کاری</div>
+        {% for key in visible_nav %}
+          {% if key in nav_catalog %}
+            {% set item = nav_catalog[key] %}
+            <a class="sidebar-link enterprise-nav-link {% if item.active %}active{% endif %}" href="{{ item.href }}" title="{{ item.label }}">
+              <i data-lucide="{{ item.icon }}"></i>
+              <span>{{ item.label }}</span>
+              {% if key == "notifications" and badge_count and badge_count > 0 %}
+                <em class="nav-count">{{ badge_count }}</em>
+              {% endif %}
+            </a>
+          {% endif %}
+        {% endfor %}
+      </nav>
+
       {% if user and user.role and user.role.value.startswith("secretariat") %}
-      <div class="sidebar-section mt-2">
-        <div class="sidebar-caption">مدیریت</div>
-
-        {% if user and can_manage_masterdata(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/orgs') %}active{% endif %}" href="/orgs">
-          <i data-lucide="workflow"></i><span>ارگان‌ها</span>
-        </a>
+      <div class="enterprise-nav enterprise-nav-admin">
+        <div class="sidebar-caption">مدیریت سامانه</div>
+        {% if can_manage_masterdata(user) %}
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/orgs') %}active{% endif %}" href="/orgs"><i data-lucide="building-2"></i><span>ارگان‌ها</span></a>
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/counties') %}active{% endif %}" href="/counties"><i data-lucide="map-pin"></i><span>شهرستان‌ها</span></a>
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/org-counties') %}active{% endif %}" href="/org-counties"><i data-lucide="git-merge"></i><span>ارگان-شهرستان</span></a>
         {% endif %}
-        {% if user and can_manage_masterdata(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/counties') %}active{% endif %}" href="/counties">
-          <i data-lucide="map-pin"></i><span>شهرستان‌ها</span>
-        </a>
+        {% if user.role.value == 'secretariat_admin' %}
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/programs') %}active{% endif %}" href="/programs"><i data-lucide="table-2"></i><span>پایش برنامه</span></a>
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/report-template') %}active{% endif %}" href="/report-template"><i data-lucide="file-type"></i><span>قالب PDF</span></a>
         {% endif %}
-        {% if user and can_manage_masterdata(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/org-counties') %}active{% endif %}" href="/org-counties">
-          <i data-lucide="link"></i><span>ارگان↔شهرستان</span>
-        </a>
+        {% if can_view_forms(user) %}
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/forms') %}active{% endif %}" href="/forms"><i data-lucide="list-checks"></i><span>فرم‌ها</span></a>
         {% endif %}
-        {% if user and user.role and user.role.value == 'secretariat_admin' %}
-        <a class="sidebar-link {% if request.url.path.startswith('/programs') %}active{% endif %}" href="/programs">
-          <i data-lucide="table-2"></i><span>پایش برنامه</span>
-        </a>
-        <a class="sidebar-link {% if request.url.path.startswith('/report-template') %}active{% endif %}" href="/report-template">
-          <i data-lucide="file-type"></i><span>قالب PDF گزارش</span>
-        </a>
-        {% endif %}
-        {% if user and can_view_forms(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/forms') %}active{% endif %}" href="/forms">
-          <i data-lucide="list-checks"></i><span>فرم‌ها</span>
-        </a>
-        {% endif %}
-        {% if user %}
-        <a class="sidebar-link {% if request.url.path.startswith('/audit') %}active{% endif %}" href="/audit">
-          <i data-lucide="notebook-text"></i><span>لاگ فرم‌ها</span>
-        </a>
-        {% endif %}
-
-        {% if user and can_manage_masterdata(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/policy') %}active{% endif %}" href="/policy">
-          <i data-lucide="shield-check"></i><span>ماتریس دسترسی‌ها</span>
-        </a>
-        {% endif %}
-        {% if user and can_manage_masterdata(user) %}
-
-        <a class="sidebar-link {% if request.url.path.startswith('/users') %}active{% endif %}" href="/users">
-          <i data-lucide="users"></i><span>کاربران</span>
-        </a>
+        {% if can_manage_masterdata(user) %}
+          <a class="sidebar-link enterprise-nav-link {% if path.startswith('/users') %}active{% endif %}" href="/users"><i data-lucide="users"></i><span>کاربران</span></a>
         {% endif %}
       </div>
       {% endif %}
 
-      <!-- <div class="sidebar-footer mt-auto">
-        {% if user %}
-          <div class="small text-muted mb-2">ورود با:</div>
-          <div class="d-flex align-items-center justify-content-between gap-2">
-            <div class="text-truncate">
-              <div class="fw-semibold text-truncate tw-text-white">{{ user.full_name or user.username }}</div>
-              <div class="small text-truncate tw-text-white/[0.55]">{{ user.role_label }}</div>
-            </div>
-            <form method="post" action="/logout" class="m-0">
-              <button type="submit" class="btn btn-sm btn-outline-light">خروج</button>
-            </form>
-          </div>
-        {% else %}
-          <a class="btn btn-sm btn-primary w-100" href="/login">ورود</a>
-        {% endif %}
-      </div> -->
+      <div class="sidebar-workflow-card">
+        <span class="mini-label">مدل عملیاتی</span>
+        <strong>Camunda-ready BPM</strong>
+        <p>وضعیت‌ها، نقش‌ها و فرم‌ها به مدل BPMN/DMN متصل هستند.</p>
+      </div>
     </aside>
 
-    <!-- Main -->
-    <div class="app-main">
-      <!-- Topbar -->
-      <header class="app-topbar chart-card">
-        <div class="d-flex align-items-center gap-2 flex-grow-1">
+    <div class="app-main enterprise-main">
+      <header class="app-topbar enterprise-topbar">
+        <div class="topbar-start">
           <button class="btn btn-sm btn-outline-secondary d-lg-none" type="button" data-mobile-sidebar-open aria-label="باز کردن منو">
             <i data-lucide="menu"></i>
           </button>
-
-          <!-- <div class="topbar-title">
-            {% block page_title %}سامانه سازگاری با کم‌آبی{% endblock %}
-          </div> -->
-
-          <div class="topbar-search">
+          <div class="topbar-search command-trigger" role="search">
             <i data-lucide="search"></i>
-            <input type="search" placeholder="جستجو..." aria-label="جستجو">
+            <input type="search" placeholder="جستجو در گزارش‌ها، کارها و لاگ‌ها..." aria-label="جستجو">
+            <kbd>Ctrl K</kbd>
           </div>
         </div>
 
-        <div class="d-flex align-items-center gap-2">
-          <a class="btn btn-sm btn-outline-secondary position-relative" href="/notifications" title="اعلان‌ها">
+        <div class="topbar-actions">
+          {% if user and can_create_report(user) %}
+            <a class="btn btn-primary btn-sm" href="/reports"><i data-lucide="file-plus-2"></i><span>گزارش جدید</span></a>
+          {% endif %}
+          <a class="icon-btn topbar-icon" href="/notifications" aria-label="اعلان‌ها">
             <i data-lucide="bell"></i>
-            {% if badge_count and badge_count>0 %}
-              <span class="position-absolute top-0 start-0 translate-middle badge rounded-pill text-bg-danger" style="font-size:.65rem">
-                {{ badge_count }}
-              </span>
-            {% endif %}
+            {% if badge_count and badge_count > 0 %}<span class="notification-dot">{{ badge_count }}</span>{% endif %}
           </a>
 
           {% if user %}
             {% set disp = (user.full_name or user.username or '') %}
             {% set initials = (disp.split(' ')[0][:1] ~ (disp.split(' ')[1][:1] if disp.split(' ')|length>1 else '')) %}
-            <div class="topbar-chip">
+            <div class="topbar-chip enterprise-profile">
               <span class="user-avatar">{{ initials|upper }}</span>
-              <div class="d-flex flex-column lh-sm">
-                <span class="small fw-semibold text-truncate" style="max-width: 180px">{{ user.full_name or user.username }}</span>
-                <span class="small text-muted">{{ user.role_label }}</span>
+              <div class="profile-copy">
+                <strong>{{ user.full_name or user.username }}</strong>
+                <span>{{ user.role_label }}</span>
               </div>
-              <form method="post" action="/logout" class="m-0 ms-2">
-                <button type="submit" class="btn btn-sm btn-outline-danger">خروج</button>
+              <form method="post" action="/logout" class="m-0">
+                <button type="submit" class="icon-btn" aria-label="خروج"><i data-lucide="log-out"></i></button>
               </form>
             </div>
           {% else %}
-            <div class="topbar-chip">
-              <i data-lucide="user"></i>
-              <span class="small">Guest</span>
-              <a class="btn btn-sm btn-primary ms-2" href="/login">ورود</a>
-            </div>
+            <a class="btn btn-primary btn-sm" href="/login">ورود</a>
           {% endif %}
         </div>
       </header>
 
-      <main class="container-fluid app-container">
+      <main class="container-fluid app-container enterprise-container">
         {% block content %}{% endblock %}
       </main>
-
-      <footer class="app-footer">
-        <div class="container-fluid text-muted small">
-          © سامانه سازگاری با کم‌آبی
-        </div>
-      </footer>
     </div>
   </div>
 
-  <!-- Mobile Sidebar -->
   <div class="mobile-sidebar" id="mobileSidebar" aria-hidden="true">
     <button type="button" class="mobile-sidebar-backdrop" data-mobile-sidebar-close aria-label="بستن منو"></button>
     <div class="mobile-sidebar-panel" role="dialog" aria-labelledby="mobileSidebarLabel">
       <div class="mobile-sidebar-header">
-        <h5 id="mobileSidebarLabel">منو</h5>
+        <h5 id="mobileSidebarLabel">ناوبری</h5>
         <button type="button" class="icon-btn" data-mobile-sidebar-close aria-label="بستن منو"><i data-lucide="x"></i></button>
       </div>
       <div class="mobile-sidebar-body">
-      <a class="btn btn-outline-primary w-100 mb-2" href="/">داشبورد</a>
-      <a class="btn btn-outline-primary w-100 mb-2" href="/submissions">ثبت داده</a>
-      <a class="btn btn-outline-primary w-100 mb-2" href="/reports">گزارش‌ها</a>
-      <a class="btn btn-outline-primary w-100 mb-2" href="/notifications">اعلان‌ها {% if badge_count and badge_count>0 %}<span class="badge text-bg-danger ms-1">{{ badge_count }}</span>{% endif %}</a>
-
-      {% if user and user.role and user.role.value.startswith("secretariat") %}
-        <hr>
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/orgs">ارگان‌ها</a>
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/counties">شهرستان‌ها</a>
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/org-counties">ارگان↔شهرستان</a>
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/programs">پایش برنامه</a>
-        {% if user and user.role and user.role.value == 'secretariat_admin' %}
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/report-template">قالب PDF گزارش</a>
-        {% endif %}
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/forms">فرم‌ها</a>
-        <a class="btn btn-outline-secondary w-100 mb-2" href="/users">کاربران</a>
-      {% endif %}
+        {% for key in visible_nav %}
+          {% if key in nav_catalog %}
+            {% set item = nav_catalog[key] %}
+            <a class="btn btn-outline-secondary w-100" href="{{ item.href }}"><i data-lucide="{{ item.icon }}"></i>{{ item.label }}</a>
+          {% endif %}
+        {% endfor %}
       </div>
     </div>
   </div>
-  
-  <!-- Global Loading (HTMX) -->
-  <div id="globalLoading" class="global-loading">
-    <div class="spinner-border text-primary" role="status" aria-label="Loading"></div>
+
+  <div class="command-palette" id="commandPalette" aria-hidden="true">
+    <button type="button" class="command-backdrop" data-command-close aria-label="بستن جستجو"></button>
+    <div class="command-panel" role="dialog" aria-labelledby="commandPaletteLabel">
+      <div class="command-input-row">
+        <i data-lucide="search"></i>
+        <input id="commandInput" type="search" placeholder="یک مسیر یا اقدام را تایپ کنید..." aria-labelledby="commandPaletteLabel">
+        <button type="button" class="icon-btn" data-command-close aria-label="بستن"><i data-lucide="x"></i></button>
+      </div>
+      <div class="command-list" id="commandPaletteLabel">
+        <a href="/reports"><i data-lucide="inbox"></i><span>کارهای من و گزارش‌ها</span></a>
+        <a href="/reports"><i data-lucide="file-plus-2"></i><span>ایجاد گزارش</span></a>
+        <a href="/notifications"><i data-lucide="bell"></i><span>اعلان‌ها</span></a>
+        {% if user and user.role.value.startswith("secretariat") %}
+          <a href="/audit"><i data-lucide="notebook-text"></i><span>لاگ‌های ممیزی</span></a>
+          <a href="/policy"><i data-lucide="shield-check"></i><span>ماتریس دسترسی</span></a>
+        {% endif %}
+      </div>
+    </div>
   </div>
 
-  <!-- Toasts -->
+  <div id="globalLoading" class="global-loading">
+    <div class="skeleton-stack" role="status" aria-label="در حال بارگذاری">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Session/Connection Modal -->
   <div class="ui-modal" id="disconnectModal" aria-hidden="true" role="dialog" aria-labelledby="disconnectModalLabel">
     <div class="ui-modal-backdrop"></div>
     <div class="ui-modal-dialog">
@@ -254,6 +203,5 @@
       </div>
     </div>
   </div>
-
 </body>
 </html>

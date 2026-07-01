@@ -1,46 +1,65 @@
-<div class="d-flex justify-content-between align-items-start">
-  <div>
-    <h6 class="mb-1">اقدامات</h6>
-    <div class="text-muted small">وضعیت فعلی: <b>{{ report.status_label }}</b></div>
+{% set stage = workflow_stage(report.status) %}
+<div class="decision-panel">
+  <div class="decision-head">
+    <div>
+      <span class="mini-label">Action Center</span>
+      <h3>تصمیم مرحله جاری</h3>
+      <p>{{ stage.label if stage else report.status_label }}</p>
+    </div>
+    <span class="badge badge-status status-{{ status_tone(report.status) }}">#{{ report.id }}</span>
   </div>
-  <span class="badge text-bg-light">#{{ report.id }}</span>
-</div>
 
-{% if actions|length == 0 %}
-  <div class="text-muted mt-2">این گزارش در صف شما نیست یا اقدامی برای این وضعیت ندارید.</div>
-{% else %}
-  <div class="mt-3 d-grid gap-2">
-    {% for act in actions %}
-      <form hx-post="/reports/{{ report.id }}/action" hx-target="#actionsBox" hx-swap="innerHTML" class="border rounded-4 p-3 bg-body-tertiary">
-        <input type="hidden" name="action" value="{{ act }}">
+  <div class="decision-context">
+    <div><span>وضعیت</span><strong>{{ report.status_label }}</strong></div>
+    <div><span>فرم Camunda</span><strong>{{ stage.camunda_form_id if stage and stage.camunda_form_id else '-' }}</strong></div>
+    <div><span>SLA</span><strong>{% if stage and stage.sla_hours %}{{ stage.sla_hours }} ساعت{% else %}پایان{% endif %}</strong></div>
+  </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <div class="fw-semibold">
-            {% if act == "submit_for_review" %}ارسال برای بررسی{% endif %}
-            {% if act == "approve" %}تأیید و ارسال{% endif %}
-            {% if act == "request_revision" %}برگشت برای اصلاح{% endif %}
-            {% if act == "final_approve" %}تأیید نهایی{% endif %}
+  {% if actions|length == 0 %}
+    <div class="empty-state compact">
+      <i data-lucide="lock-keyhole"></i>
+      این گزارش در صف شما نیست یا برای وضعیت فعلی اقدامی تعریف نشده است.
+    </div>
+  {% else %}
+    <div class="decision-actions">
+      {% for act in actions %}
+        {% set meta = ACTION_META.get(act, {}) %}
+        <form
+          hx-post="/reports/{{ report.id }}/action"
+          hx-target="#actionsBox"
+          hx-swap="innerHTML"
+          class="decision-form decision-{{ meta.get('tone', 'primary') }}"
+          onsubmit="return confirm('اقدام «{{ meta.get('label', act) }}» روی گزارش #{{ report.id }} ثبت شود؟')"
+        >
+          <input type="hidden" name="action" value="{{ act }}">
+
+          <div class="decision-form-title">
+            <i data-lucide="{{ meta.get('icon', 'circle-dot') }}"></i>
+            <div>
+              <strong>{{ meta.get("label", act) }}</strong>
+              <small>DMN outcome: {{ meta.get("dmn", act) }}</small>
+            </div>
           </div>
-          <span class="badge text-bg-secondary">{{ act }}</span>
-        </div>
 
-        {% if act != "final_approve" %}
-          <label class="form-label small text-muted mb-1">ارسال به</label>
-          <select name="recipient_id" class="form-select form-select-sm" required>
-            <option value="">-- انتخاب گیرنده --</option>
-            {% for u in (action_recipients.get(act) or []) %}
-              <option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>
-            {% endfor %}
-          </select>
-        {% endif %}
+          {% if act != "final_approve" %}
+            <label class="form-label small text-muted mb-1">گیرنده مرحله بعد</label>
+            <select name="recipient_id" class="form-select form-select-sm" required>
+              <option value="">انتخاب گیرنده</option>
+              {% for u in (action_recipients.get(act) or []) %}
+                <option value="{{ u.id }}">{{ u.full_name }} ({{ u.username }})</option>
+              {% endfor %}
+            </select>
+          {% endif %}
 
-        <label class="form-label small text-muted mt-2 mb-1">توضیح (اختیاری)</label>
-        <input name="comment" class="form-control form-control-sm" placeholder="توضیح کوتاه...">
+          <label class="form-label small text-muted mt-2 mb-1">یادداشت تصمیم</label>
+          <textarea name="comment" class="form-control form-control-sm decision-comment" placeholder="دلیل تایید، اصلاح یا ارسال را کوتاه بنویسید..."></textarea>
 
-        <button type="submit" class="btn btn-sm btn-primary mt-2 w-100">
-          انجام اقدام
-        </button>
-      </form>
-    {% endfor %}
-  </div>
-{% endif %}
+          <button type="submit" class="btn btn-sm btn-primary w-100">
+            <i data-lucide="{{ meta.get('icon', 'send') }}"></i>
+            ثبت تصمیم
+          </button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>

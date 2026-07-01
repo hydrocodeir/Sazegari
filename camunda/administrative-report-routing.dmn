@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="AdministrativeReportDecisions" name="Administrative report decisions" namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="administrative_report_routing" name="Administrative report routing">
+    <decisionTable id="DecisionTable_AdministrativeReportRouting" hitPolicy="FIRST">
+      <input id="Input_Priority" label="Priority">
+        <inputExpression id="InputExpression_Priority" typeRef="string">
+          <text>priority</text>
+        </inputExpression>
+      </input>
+      <input id="Input_RiskScore" label="Risk score">
+        <inputExpression id="InputExpression_RiskScore" typeRef="number">
+          <text>riskScore</text>
+        </inputExpression>
+      </input>
+      <input id="Input_RevisionCount" label="Revision count">
+        <inputExpression id="InputExpression_RevisionCount" typeRef="number">
+          <text>revisionCount</text>
+        </inputExpression>
+      </input>
+      <input id="Input_SlaBreached" label="SLA breached">
+        <inputExpression id="InputExpression_SlaBreached" typeRef="boolean">
+          <text>slaBreached</text>
+        </inputExpression>
+      </input>
+      <output id="Output_NextRole" label="Next role" name="nextRole" typeRef="string" />
+      <output id="Output_SlaHours" label="SLA hours" name="slaHours" typeRef="number" />
+      <output id="Output_Escalate" label="Escalate" name="escalate" typeRef="boolean" />
+      <output id="Output_PriorityBand" label="Priority band" name="priorityBand" typeRef="string" />
+      <rule id="Rule_Sla_Breached">
+        <inputEntry id="InputEntry_Sla_Priority"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Sla_Risk"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Sla_Revision"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Sla_Breached"><text>true</text></inputEntry>
+        <outputEntry id="OutputEntry_Sla_NextRole"><text>"senior_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_Sla_Hours"><text>24</text></outputEntry>
+        <outputEntry id="OutputEntry_Sla_Escalate"><text>true</text></outputEntry>
+        <outputEntry id="OutputEntry_Sla_Band"><text>"overdue"</text></outputEntry>
+      </rule>
+      <rule id="Rule_High_Risk">
+        <inputEntry id="InputEntry_High_Priority"><text>"urgent", "high"</text></inputEntry>
+        <inputEntry id="InputEntry_High_Risk"><text><![CDATA[>= 80]]></text></inputEntry>
+        <inputEntry id="InputEntry_High_Revision"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_High_Breached"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_High_NextRole"><text>"senior_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_High_Hours"><text>24</text></outputEntry>
+        <outputEntry id="OutputEntry_High_Escalate"><text>true</text></outputEntry>
+        <outputEntry id="OutputEntry_High_Band"><text>"high"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Repeated_Revision">
+        <inputEntry id="InputEntry_Revision_Priority"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Revision_Risk"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Revision_Count"><text><![CDATA[>= 2]]></text></inputEntry>
+        <inputEntry id="InputEntry_Revision_Breached"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Revision_NextRole"><text>"department_manager"</text></outputEntry>
+        <outputEntry id="OutputEntry_Revision_Hours"><text>48</text></outputEntry>
+        <outputEntry id="OutputEntry_Revision_Escalate"><text>true</text></outputEntry>
+        <outputEntry id="OutputEntry_Revision_Band"><text>"watch"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Normal">
+        <inputEntry id="InputEntry_Normal_Priority"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Normal_Risk"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Normal_Revision"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Normal_Breached"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Normal_NextRole"><text>"supervisor"</text></outputEntry>
+        <outputEntry id="OutputEntry_Normal_Hours"><text>72</text></outputEntry>
+        <outputEntry id="OutputEntry_Normal_Escalate"><text>false</text></outputEntry>
+        <outputEntry id="OutputEntry_Normal_Band"><text>"normal"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

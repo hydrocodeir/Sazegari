@@ -2,115 +2,103 @@
 {% block page_title %}داشبورد مدیر استان{% endblock %}
 
 {% block content %}
-<div class="dashboard-page">
-  <div class="dashboard-heading">
+<div class="page-grid manager-workspace">
+  <section class="workspace-hero manager-hero">
     <div>
-      <div class="dashboard-breadcrumb">صفحات / داشبورد مدیر استان</div>
-      <h1>داشبورد مدیر استان</h1>
-      <p>سلام {{ user.full_name or user.username }}، وضعیت تجمیعی داده‌ها، گزارش‌ها و برنامه استان را رصد کنید.</p>
+      <div class="breadcrumb-line">داشبورد / مدیر استان</div>
+      <h1>کنترل‌سنتر مدیریتی استان</h1>
+      <p>{{ user.full_name or user.username }}، این نما برای پایش صف بررسی‌ها، تجمیع شهرستان‌ها، برنامه‌ها و گلوگاه‌های گزارش طراحی شده است.</p>
     </div>
-    <div class="dashboard-actions">
-      <a class="btn btn-primary" href="/reports"><i data-lucide="file-text"></i>گزارش‌ها</a>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="/reports?view=inbox"><i data-lucide="inbox"></i>کارهای من</a>
       <a class="btn btn-outline-secondary" href="/notifications"><i data-lucide="bell"></i>اعلان‌ها</a>
     </div>
-  </div>
+  </section>
 
-  <div class="dashboard-kpis">
-    <div class="kpi-card">
+  <section class="kpi-grid kpi-grid-5">
+    <article class="metric-card">
+      <span class="metric-label">صف اقدام مدیر استان</span>
+      <strong>{{ kpi.my_queue }}</strong>
+      <div class="metric-trend"><i data-lucide="user-check"></i> نیازمند تصمیم</div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">در حال بررسی</span>
+      <strong>{{ kpi.pending_reports }}</strong>
+      <div class="metric-trend"><i data-lucide="workflow"></i> مرحله فعال</div>
+    </article>
+    <article class="metric-card metric-warning">
+      <span class="metric-label">برگشت / اصلاح</span>
+      <strong>{{ kpi.returned_reports }}</strong>
+      <div class="metric-trend"><i data-lucide="undo-2"></i> نیازمند پیگیری</div>
+    </article>
+    <article class="metric-card metric-success">
+      <span class="metric-label">تایید نهایی</span>
+      <strong>{{ kpi.approved_reports }}</strong>
+      <div class="metric-trend"><i data-lucide="badge-check"></i> خروجی قطعی</div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">ثبت داده‌ها</span>
+      <strong>{{ kpi.total_submissions }}</strong>
+      <div class="metric-trend"><i data-lucide="database"></i> کل استان</div>
+    </article>
+  </section>
+
+  <section class="ops-panel">
+    <div class="filter-strip manager-filter">
       <div>
-        <div class="kpi-label">اعلان‌های خوانده‌نشده</div>
-        <div class="kpi-value">{{ kpi.unread_notifications }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="bell"></i></div>
-      <div class="kpi-footer"><span class="neutral">{{ kpi.unread_notifications }}</span> مورد جدید</div>
-    </div>
-
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">گزارش‌های در صف شما</div>
-        <div class="kpi-value">{{ kpi.my_queue }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="inbox"></i></div>
-      <div class="kpi-footer"><span class="neutral">{{ kpi.my_queue }}</span> در انتظار اقدام</div>
-    </div>
-
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">کل گزارش‌ها</div>
-        <div class="kpi-value">{{ kpi.total_reports }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="files"></i></div>
-      <div class="kpi-footer"><span class="positive">سازمان</span> محدوده استان</div>
-    </div>
-
-    <div class="kpi-card">
-      <div>
-        <div class="kpi-label">ثبت داده‌ها</div>
-        <div class="kpi-value">{{ kpi.total_submissions }}</div>
-      </div>
-      <div class="kpi-icon"><i data-lucide="clipboard-list"></i></div>
-      <div class="kpi-footer"><span class="positive">تجمیعی</span> سازمان</div>
-    </div>
-  </div>
-
-  <section class="section-panel">
-      <div class="filter-strip">
-        <div>
-          <h2 class="section-title">نمایش داده‌ها و فرم‌های وارد شده</h2>
-          <p class="section-note">با انتخاب شهرستان، جدول‌ها به‌صورت خودکار به‌روزرسانی می‌شوند.</p>
-        </div>
-
-        <div class="d-flex align-items-center gap-2">
-          <label class="small tw-font-black tw-text-[#31524c] m-0" for="county_id">شهرستان:</label>
-          <select
-            id="county_id"
-            name="county_id"
-            class="form-select form-select-sm"
-            style="min-width: 220px"
-            hx-get="/dashboard/prov/tables"
-            hx-target="#prov-tables"
-            hx-swap="innerHTML"
-            hx-trigger="load, change"
-            hx-indicator="#prov-tables-loading"
-          >
-            <option value="" selected>همه</option>
-            <option value="0">استان</option>
-            {% for c in counties %}
-              <option value="{{ c.id }}">{{ c.name }}</option>
-            {% endfor %}
-          </select>
-
-          <div id="prov-tables-loading" class="htmx-indicator ms-2">
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          </div>
-        </div>
+        <h2 class="section-title">نمای شهرستان و استان</h2>
+        <p class="section-note">انتخاب شهرستان، داده‌ها و گزارش‌ها را در همان محدوده بازخوانی می‌کند.</p>
       </div>
 
-      <div id="prov-tables" class="mt-3">
-        <div class="empty-state">در حال بارگذاری...</div>
-      </div>
-    </section>
-
-  <section class="section-panel">
-      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-3">
-        <div>
-          <h2 class="section-title">پایش برنامه</h2>
-          <p class="section-note">نمایش تجمیعی کل استان بر اساس تیپ فرم‌ها و ردیف/پروژه‌ها</p>
-        </div>
-        <div class="htmx-indicator" id="prov-program-loading">
+      <div class="filter-controls">
+        <label class="small fw-semibold m-0" for="county_id">حوزه:</label>
+        <select
+          id="county_id"
+          name="county_id"
+          class="form-select form-select-sm"
+          hx-get="/dashboard/prov/tables"
+          hx-target="#prov-tables"
+          hx-swap="innerHTML"
+          hx-trigger="load, change"
+          hx-indicator="#prov-tables-loading"
+        >
+          <option value="" selected>همه</option>
+          <option value="0">استان</option>
+          {% for c in counties %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <div id="prov-tables-loading" class="htmx-indicator">
           <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
         </div>
       </div>
+    </div>
 
-      <div
-        id="prov-program-charts"
-        hx-get="/dashboard/prov/program-charts"
-        hx-trigger="load"
-        hx-swap="innerHTML"
-        hx-indicator="#prov-program-loading"
-      >
-        <div class="empty-state">در حال بارگذاری...</div>
+    <div id="prov-tables" class="manager-table-region">
+      <div class="skeleton-card"></div>
+    </div>
+  </section>
+
+  <section class="ops-panel">
+    <div class="panel-head">
+      <div>
+        <h2>پایش برنامه و شاخص‌های تجمیعی</h2>
+        <p>نمودارهای فشرده برای هدف، تحقق و عقب‌ماندگی برنامه‌ای.</p>
       </div>
-    </section>
+      <div class="htmx-indicator" id="prov-program-loading">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      </div>
+    </div>
+
+    <div
+      id="prov-program-charts"
+      hx-get="/dashboard/prov/program-charts"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+      hx-indicator="#prov-program-loading"
+    >
+      <div class="skeleton-card"></div>
+    </div>
+  </section>
 </div>
 {% endblock %}
